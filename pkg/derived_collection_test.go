@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -106,23 +107,30 @@ func sorted[T ResourceNamer](c Collection[T]) []T {
 }
 
 type tracker[T ResourceNamer] struct {
-	t      *testing.T
+	t *testing.T
+
+	mut    *sync.RWMutex
 	events map[string]struct{}
 }
 
 func NewTracker[T ResourceNamer](t *testing.T) tracker[T] {
 	return tracker[T]{
 		t:      t,
+		mut:    &sync.RWMutex{},
 		events: make(map[string]struct{}),
 	}
 }
 
 func (t *tracker[T]) Track(e Event[T]) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
 	t.events[fmt.Sprintf("%s/%s", e.Event, e.Latest().ResourceName())] = struct{}{}
 }
 
 func (t *tracker[T]) Wait(events ...string) {
 	assert.Eventually(t.t, func() bool {
+		t.mut.RLock()
+		defer t.mut.RUnlock()
 		for _, ev := range events {
 			if _, ok := t.events[ev]; !ok {
 				return false
