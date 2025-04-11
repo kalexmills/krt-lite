@@ -93,7 +93,8 @@ func (i informer[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool
 	return registration
 }
 
-func (i informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
+func (i informer[T]) WaitUntilSynced(
+	stop <-chan struct{}) (result bool) {
 	if i.inf.HasSynced() {
 		return true
 	}

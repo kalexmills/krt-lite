@@ -38,15 +38,15 @@ func SimpleNamespaceCollection(pods Collection[*corev1.Namespace]) Collection[Si
 }
 
 func TestDerivedCollectionSimple(t *testing.T) {
-	t0 := time.Now()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	client := fake.NewClientset()
 	nsClient := client.CoreV1().Namespaces()
-	ctx := context.Background()
 
 	// create collections
 	Namespaces := WrapClient[*corev1.Namespace, *corev1.NamespaceList](ctx, nsClient)
-	Namespaces.WaitUntilSynced(t.Context().Done())
+	Namespaces.WaitUntilSynced(ctx.Done())
 	SimpleNamespaces := SimpleNamespaceCollection(Namespaces)
 
 	assert.Empty(t, sorted(SimpleNamespaces), "expected collection to start empty")

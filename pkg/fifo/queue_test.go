@@ -7,16 +7,18 @@ import (
 	"time"
 )
 
-func TestQueueNoPause(t *testing.T) {
-	test(t, 0, 0)
-}
+func TestQueue(t *testing.T) {
+	t.Run("it works with zero latency", func(t *testing.T) {
+		test(t, 0, 0)
+	})
 
-func TestQueueInDelay(t *testing.T) {
-	test(t, 5*time.Millisecond, 0)
-}
+	t.Run("it works when sends are slow", func(t *testing.T) {
+		test(t, 5*time.Millisecond, 0)
+	})
 
-func TestQueueOutDelay(t *testing.T) {
-	test(t, 0, 5*time.Millisecond)
+	t.Run("it works when receives are slow", func(t *testing.T) {
+		test(t, 0, 5*time.Millisecond)
+	})
 }
 
 func test(t *testing.T, inDelay, outDelay time.Duration) {
@@ -74,7 +76,7 @@ func BenchmarkQueue_Send(b *testing.B) {
 		}
 	}()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		q.In() <- 12
 	}
 	close(q.In())
@@ -105,7 +107,7 @@ func BenchmarkQueue_Receive(b *testing.B) {
 	}()
 
 	var x int
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		x = <-q.Out()
 	}
 	close(stop)

@@ -1,0 +1,43 @@
+name: Golang CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        golang-version: [ '1.23' ]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Golang
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.golang-version }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.0
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        golang-version: [ '1.23' ]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Golang
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.golang-version }}
+      - name: Run tests
+        run: make test
