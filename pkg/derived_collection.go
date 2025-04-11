@@ -19,13 +19,12 @@ type derivedCollection[I, O any] struct {
 	mappings    map[Key[I]]map[Key[O]]struct{}
 
 	registeredHandlers map[*processor[Event[O]]]struct{}
-	processorWg        *sync.WaitGroup
+	processorWg        *sync.WaitGroup // TODO: use this to shutdown?
 
 	stop      chan struct{}
 	parentReg cache.ResourceEventHandlerRegistration
 
-	queueMut *sync.Mutex
-	queue    *fifo.Queue[[]Event[I]]
+	queue *fifo.Queue[[]Event[I]]
 }
 
 var _ Collection[any] = &derivedCollection[int, any]{}
@@ -53,7 +52,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	recomputed := make([]map[Key[O]]O, 0, len(inputs))
+	recomputed := make([]map[Key[O]]O, len(inputs))
 	for idx, input := range inputs {
 		if input.Event == EventDelete {
 			continue
@@ -89,7 +88,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		} else {
 			results := recomputed[idx]
 
-			newKeys := setFrom(maps.Keys(results))
+			newKeys := setFromSeq(maps.Keys(results))
 			oldKeys := c.mappings[iKey]
 			c.mappings[iKey] = newKeys
 			c.inputs[iKey] = i
@@ -165,6 +164,7 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 	p := newProcessor(f)
 	c.processorWg.Add(1)
 	go p.run()
+
 	c.registeredHandlers[p] = struct{}{}
 
 	if !runExistingState {

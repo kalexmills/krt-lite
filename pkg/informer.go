@@ -1,12 +1,14 @@
 package pkg
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"time"
 )
@@ -28,9 +30,7 @@ func indexByNamespaceName(in any) ([]string, error) {
 	return []string{key}, nil
 }
 
-// NewInformer creates a new collection from a ListerWatcher and starts it. Caller is responsible for ensuring the
-// provided ListerWatcher matches type T, otherwise a panic will result.
-// TODO: try to get the first parameter as close to a regular client as possible.
+// NewInformer creates a new collection from the provided client
 func NewInformer[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
 	result := informer[T]{
 		inf: cache.NewSharedIndexInformer(
@@ -42,7 +42,7 @@ func NewInformer[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
 		stop: make(chan struct{}),
 	}
 
-	go result.inf.Run(result.stop) // TODO: handle this much better
+	go result.inf.Run(result.stop)
 
 	return result
 }
@@ -87,7 +87,7 @@ func (i informer[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool
 		f([]Event[T]{ev})
 	}})
 	if err != nil {
-		// TODO: complain or panic
+		panic(err) // TODO: complain differently
 	}
 	return registration
 }
@@ -180,4 +180,20 @@ func extract[T runtime.Object](obj any) *T {
 		return nil
 	}
 	return &o
+}
+
+type TypedClient[TL runtime.Object] interface {
+	List(ctx context.Context, opts metav1.ListOptions) (TL, error)
+	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
+}
+
+func WrapClient[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) Collection[T] {
+	return NewInformer[T](&cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return c.List(ctx, opts)
+		},
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			return c.Watch(ctx, opts)
+		},
+	})
 }

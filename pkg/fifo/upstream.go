@@ -35,7 +35,7 @@ package fifo
 
 // minQueueLen is smallest capacity that ringbuf may have.
 // Must be power of 2 for bitwise modulus: x % n == x & (n - 1).
-const minQueueLen = 16
+const minQueueLen = 1024
 
 // ringbuf represents a single instance of the ringbuf data structure.
 type ringbuf[V any] struct {
