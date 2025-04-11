@@ -1,6 +1,12 @@
 version: "2"
 linters:
+  settings:
+    govet:
+      enable:
+        - loopclosure
+        -
   enable:
     - revive
     - gosec
     - errorlint
+    - govet

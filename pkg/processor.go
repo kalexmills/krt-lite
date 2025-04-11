@@ -1,12 +1,16 @@
 package pkg
 
-import "github.com/kalexmills/krt-plusplus/pkg/fifo"
+import (
+	"github.com/kalexmills/krt-plusplus/pkg/fifo"
+	"sync/atomic"
+)
 
+// TODO: rename this registration handler
 type processor[T any] struct {
 	handler func(o []T)
 	queue   *fifo.Queue[[]T]
 
-	syncedCh chan struct{}
+	isSynced atomic.Bool
 
 	stopCh chan struct{}
 }
@@ -14,19 +18,18 @@ type processor[T any] struct {
 // newProcessor returns and starts a processor.
 func newProcessor[T any](f func(o []T)) *processor[T] {
 	result := &processor[T]{
-		handler: f,
-		queue:   fifo.NewQueue[[]T](1024),
-		stopCh:  make(chan struct{}),
-
-		syncedCh: make(chan struct{}),
+		handler:  f,
+		queue:    fifo.NewQueue[[]T](1024),
+		stopCh:   make(chan struct{}),
+		isSynced: atomic.Bool{},
 	}
 	result.queue.Run(result.stopCh)
 	return result
 }
 
-// syncedCh is closed when processor is parentReg.
-func (p *processor[T]) syncC() <-chan struct{} {
-	return p.syncedCh
+// HasSynced is true when the processor is synced.
+func (p *processor[T]) HasSynced() bool {
+	return p.isSynced.Load()
 }
 
 func (p *processor[T]) stop() {
@@ -34,19 +37,16 @@ func (p *processor[T]) stop() {
 }
 
 func (p *processor[T]) send(os []T, isInInitialList bool) {
-	select { // stuck
+	select {
 	case <-p.stopCh:
 		return
 	case p.queue.In() <- os:
-		if isInInitialList {
-			close(p.syncedCh)
-		}
 	}
 }
 
 func (p *processor[O]) run() {
 	for {
-		select { // stuck
+		select {
 		case <-p.stopCh:
 			return
 		case next, ok := <-p.queue.Out():
@@ -55,6 +55,7 @@ func (p *processor[O]) run() {
 			}
 			if len(next) > 0 {
 				p.handler(next)
+				p.isSynced.Store(true) // TODO: without joins this seems sufficient.
 			}
 		}
 	}

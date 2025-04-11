@@ -9,6 +9,8 @@ type Queue[T any] struct {
 	running bool
 }
 
+// TODO: an option for bounded queues? This could be more dangerous than safe.
+
 // NewQueue returns a new queue with a ring buffer pre-allocated to the provided size.
 func NewQueue[T any](size int) *Queue[T] {
 	return &Queue[T]{

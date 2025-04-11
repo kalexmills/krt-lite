@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+// derivedCollection implements a collection whose contents are computed based on the contents of other collections.
+// Dependencies between collections are tracked to ensure updates are propagated properly.
 type derivedCollection[I, O any] struct {
 	uid    uint64
 	parent Collection[I]
@@ -24,6 +26,8 @@ type derivedCollection[I, O any] struct {
 	stop      chan struct{}
 	parentReg cache.ResourceEventHandlerRegistration
 
+	registrantsSynced cache.ResourceEventHandlerRegistration // TODO: multiple registers will break this.
+
 	queue *fifo.Queue[[]Event[I]]
 }
 
@@ -33,11 +37,9 @@ func (c *derivedCollection[I, O]) run() {
 	if !c.parent.WaitUntilSynced(c.stop) {
 		return
 	}
-	c.parentReg = c.parent.RegisterBatched(func(inputs []Event[I]) {
-		c.handleEvents(inputs)
-	}, true)
+	c.parentReg = c.parent.RegisterBatched(c.handleEvents, true)
 
-	// wait to sync before running.
+	// wait for parent to sync before running.
 	if !cache.WaitForCacheSync(c.stop, c.parentReg.HasSynced) {
 		return
 	}
@@ -185,13 +187,18 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 
 	p.send(events, true)
 
-	return chanSynced{ch: p.syncC()}
+	c.registrantsSynced = p
+
+	return c.registrantsSynced
 }
 
 func (c *derivedCollection[I, O]) WaitUntilSynced(stop <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stop, c.parent.HasSynced)
+	return cache.WaitForCacheSync(stop, c.HasSynced)
 }
 
 func (c *derivedCollection[I, O]) HasSynced() bool {
-	return c.parent.HasSynced()
+	if c.registrantsSynced == nil {
+		return c.parent.HasSynced()
+	}
+	return c.registrantsSynced.HasSynced()
 }

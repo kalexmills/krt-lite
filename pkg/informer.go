@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-// ComparableObject is used by generic code to produce nil values for pointer-types that implement runtime.Object.
+// ComparableObject is implemented by pointer-types that implement runtime.Object. For example *corev1.Pod implements
+// ComparableObject, while not corev1.Pod does not.
 type ComparableObject interface {
 	runtime.Object
 	comparable
@@ -31,8 +32,8 @@ func indexByNamespaceName(in any) ([]string, error) {
 	return []string{key}, nil
 }
 
-// NewInformer creates a new collection from the provided client
-func NewInformer[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
+// NewInformerFromListerWatcher creates a new collection from the provided client
+func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
 	result := informer[T]{
 		inf: cache.NewSharedIndexInformer(
 			lw,
@@ -48,6 +49,7 @@ func NewInformer[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
 	return result
 }
 
+// informer knows how to turn a cache.SharedIndexInformer into a Collection[T].
 type informer[T runtime.Object] struct {
 	inf  cache.SharedIndexInformer
 	stop <-chan struct{}
@@ -75,7 +77,7 @@ func (i informer[T]) List() []T {
 	return res
 }
 
-func (i informer[T]) Register(f func(o Event[T])) cache.ResourceEventHandlerRegistration {
+func (i informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
 	return i.RegisterBatched(func(events []Event[T]) {
 		for _, ev := range events {
 			f(ev)
@@ -83,7 +85,7 @@ func (i informer[T]) Register(f func(o Event[T])) cache.ResourceEventHandlerRegi
 	}, true)
 }
 
-func (i informer[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (i informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
 	registration, err := i.inf.AddEventHandler(eventHandler[T]{handler: func(ev Event[T], syncing bool) {
 		f([]Event[T]{ev})
 	}})
@@ -188,13 +190,18 @@ func extract[T runtime.Object](obj any) *T {
 	return &o
 }
 
+// TypedClient is an interface implemented by typed Kubernetes clientsets. TL denotes the type of a list kind, e.g.
+// *corev1.PodList
 type TypedClient[TL runtime.Object] interface {
 	List(ctx context.Context, opts metav1.ListOptions) (TL, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 }
 
-func WrapClient[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) Collection[T] {
-	return NewInformer[T](&cache.ListWatch{
+// NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
+// that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is *corev1.Pods,
+// TL must be *corev1.PodList.
+func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) Collection[T] {
+	return NewInformerFromListerWatcher[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			return c.List(ctx, opts)
 		},
