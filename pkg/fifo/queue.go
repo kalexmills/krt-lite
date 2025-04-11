@@ -20,7 +20,7 @@ func NewQueue[T any](size int) *Queue[T] {
 	}
 }
 
-// Run starts this queue and blocks the current thread. If the queue has already started, calling Run is a no-op.
+// Run starts this queue. If the queue has already started, calling Run is a no-op.
 func (q *Queue[T]) Run(stop <-chan struct{}) {
 	if q.running {
 		return
@@ -43,7 +43,7 @@ func (q *Queue[T]) Run(stop <-chan struct{}) {
 
 	loop:
 		for q.queue.Len() > 0 || q.in != nil {
-			select {
+			select { // stuck
 			case <-stop:
 				break loop
 			case t, ok := <-q.in:

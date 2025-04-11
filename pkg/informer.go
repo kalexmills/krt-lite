@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
+	"log"
 	"time"
 )
 
@@ -93,10 +94,14 @@ func (i informer[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool
 }
 
 func (i informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
-	// TODO: use t0 := time.Now()
+	if i.inf.HasSynced() {
+		return true
+	}
+
+	t0 := time.Now()
 
 	defer func() {
-		// TODO: log that we are done syncing, checking result
+		log.Printf("synced in %v", time.Since(t0))
 	}()
 
 	for {
@@ -109,14 +114,14 @@ func (i informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
 			return true
 		}
 
-		// sleep for 5 seconds, but return if the stop chan is closed.
-		t := time.NewTimer(time.Second * 5)
+		// sleep for 1 second, but return if the stop chan is closed.
+		t := time.NewTimer(time.Millisecond * 50) // TODO: allow users to set the poll interval
 		select {
 		case <-stop:
 			return false
 		case <-t.C:
 		}
-		// TODO: log that we have been waiting since t0 for a sync.
+		log.Printf("waiting for sync for %v", time.Since(t0))
 	}
 }
 

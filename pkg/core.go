@@ -49,8 +49,22 @@ const (
 	EventAdd EventType = iota
 	EventUpdate
 	EventDelete
-	EventSynced // TODO: never sent
+	EventSynced // TODO: never sent or used
 )
+
+func (e EventType) String() string {
+	switch e {
+	case EventAdd:
+		return "add"
+	case EventUpdate:
+		return "update"
+	case EventDelete:
+		return "delete"
+	case EventSynced:
+		return "synced"
+	}
+	return "unknown"
+}
 
 type Event[T any] struct {
 	Old   *T
@@ -59,10 +73,10 @@ type Event[T any] struct {
 }
 
 func (e Event[T]) Latest() T {
-	if e.Old == nil {
-		return *e.New
+	if e.New == nil {
+		return *e.Old
 	}
-	return *e.Old
+	return *e.New
 }
 
 func eventKey[T any](in any) (string, error) {
