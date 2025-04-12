@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"errors"
 	"fmt"
 	"github.com/kalexmills/krt-plusplus/pkg/fifo"
 	"iter"
@@ -17,9 +16,6 @@ type (
 
 	// A FlatMapper maps an I to many O.
 	FlatMapper[I, O any] func(i I) []O
-
-	// A Splitter maps an I into an O1 and an O2.
-	Splitter[I, O1, O2 any] func(i I) (*O1, *O2)
 
 	// A FlatSplitter maps an I into many O1 and many O2.
 	FlatSplitter[I, O1, O2 any] func(i I) ([]O1, []O2)
@@ -100,14 +96,6 @@ func (e Event[T]) Latest() T {
 	return *e.New
 }
 
-func eventKey[T any](in any) (string, error) { // TODO: will we ever use this?
-	ev, ok := in.(Event[T])
-	if !ok {
-		return "", errors.New("invalid event")
-	}
-	return fmt.Sprintf("%p-%p-%d", ev.Old, ev.New, ev.Event), nil
-}
-
 type HandlerContext interface { // TODO: will we use this?
 	DiscardResult()
 }
@@ -152,16 +140,6 @@ func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
 	go result.run()
 
 	return result
-}
-
-// Split splits a collection into two, mapping each I into zero or one O1 and O2
-func Split[I, O1, O2 any](c Collection[I], spl Splitter[I, O1, O2]) (Collection[O1], Collection[O2]) {
-	return nil, nil
-}
-
-// FlatSplit splits a collection into two, mapping each I to many O1 and many O2.
-func FlatSplit[I, O1, O2 any](c Collection[I], spl FlatSplitter[I, O1, O2]) (Collection[O1], Collection[O2]) {
-	return nil, nil
 }
 
 // Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
@@ -220,16 +198,3 @@ func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
 type alwaysSynced struct{}
 
 func (s alwaysSynced) HasSynced() bool { return true }
-
-type chanSynced struct {
-	ch <-chan struct{}
-}
-
-func (s chanSynced) HasSynced() bool {
-	select {
-	case <-s.ch:
-		return true
-	default:
-		return false
-	}
-}

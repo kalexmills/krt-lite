@@ -14,8 +14,6 @@ Writing Kubernetes controllers is easier when you can:
 ## Roadmap
 - [X] Joiner -- joining collections into one.
 - [X] StaticCollection -- collections that don't change
-  - [X] Unit Tests
-- [ ] Splitter -- splitting collections into two.
 - [ ] Indexer -- indexing an existing collection for quicker lookup.
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.

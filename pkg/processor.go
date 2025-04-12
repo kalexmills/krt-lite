@@ -32,10 +32,6 @@ func (p *registrationHandler[T]) HasSynced() bool {
 	return p.isSynced.Load()
 }
 
-func (p *registrationHandler[T]) stop() {
-	close(p.stopCh)
-}
-
 func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
 	select {
 	case <-p.stopCh:

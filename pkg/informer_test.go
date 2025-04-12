@@ -45,7 +45,7 @@ func TestNewInformer(t *testing.T) {
 		},
 	}
 
-	cmA, err := cmClient.Create(ctx, cmA, metav1.CreateOptions{})
+	_, err := cmClient.Create(ctx, cmA, metav1.CreateOptions{})
 	assert.NoError(t, err)
 	tt.Wait("add/ns/a")
 

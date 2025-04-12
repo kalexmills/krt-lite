@@ -4,9 +4,7 @@ linters:
     govet:
       enable:
         - loopclosure
-        -
   enable:
-    - revive
     - gosec
     - errorlint
     - govet

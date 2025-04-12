@@ -56,11 +56,12 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCol
 				defer j.inMut.Unlock()
 
 				inputMap := j.getInputMap(k)
-				if ev.Event == EventAdd {
+				switch ev.Event {
+				case EventAdd:
 					inputMap[idx] = o
-				} else if ev.Event == EventUpdate {
+				case EventUpdate:
 					inputMap[idx] = o
-				} else if ev.Event == EventDelete {
+				case EventDelete:
 					delete(inputMap, idx)
 				}
 

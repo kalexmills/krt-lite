@@ -160,11 +160,6 @@ func (e eventHandler[T]) OnDelete(obj any) {
 	}, false)
 }
 
-func isZero[T comparable](t T) bool {
-	var zero T
-	return zero == t
-}
-
 func zero[T comparable]() T {
 	var z T
 	return z
