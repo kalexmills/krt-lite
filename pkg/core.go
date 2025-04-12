@@ -183,12 +183,12 @@ func FlatSplit[I, O1, O2 any](c Collection[I], spl FlatSplitter[I, O1, O2]) (Col
 // Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
 // Joiner. Joiner will always be called with at least two inputs.
 func Join[T any](cs []Collection[T], j Joiner[T]) Collection[T] {
-	return newJoin(cs, j)
+	return newJoinedCollection(cs, j)
 }
 
 // JoinDisjoint joins together a slice of collections whose keys do not overlap.
 func JoinDisjoint[T any](cs []Collection[T]) Collection[T] {
-	return newJoin(cs, nil)
+	return newJoinedCollection(cs, nil)
 }
 
 var globalUIDCounter = atomic.Uint64{}

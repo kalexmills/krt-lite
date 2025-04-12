@@ -1,21 +1,21 @@
 # krt-lite
 
-istio/krt, without Istio dependencies.
+istio/krt, without Istio.
 
-### This repo is a work-in-progress.
+*** WORK IN PROGRESS ***
 
 ## Why KRT?
 
-- Structuring your controller as a dependency graph that events can flow through.
-    - This is the correct domain model for a controller.
-- Allowing intermediate state to be modeled in the same way as external events.
-- Allowing events from sources other than Kubernetes.
+Writing Kubernetes controllers is easier when you can:
+- Structure your controller as a dependency graph that update events can flow through.
+- Allow intermediate state to be modeled in the same way as external events.
+- Handle incoming events from sources other than Kubernetes.
 
 ## Roadmap
 - [X] Joiner -- joining collections into one.
-- [ ] StaticCollection -- collections that don't change
+- [X] StaticCollection -- collections that don't change
+  - [ ] Unit Tests
 - [ ] Splitter -- splitting collections into two.
 - [ ] Indexer -- indexing an existing collection for quicker lookup.
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
-- [ ]

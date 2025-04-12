@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-type static[T any] struct {
+type static[T any] struct { // TODO: test
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
 	id      uint64

@@ -7,27 +7,29 @@ import (
 	"sync"
 )
 
-type join[O any] struct {
-	collectionName string
-	id             uint64
-	collections    []Collection[O]
-	joiner         Joiner[O]
-	syncer         *multiSyncer
+// joinedCollection joins together the results of several collections, all of which have the same type.
+type joinedCollection[O any] struct {
+	id          uint64
+	collections []Collection[O]
+	joiner      Joiner[O]
+	syncer      *multiSyncer
 
-	// TODO: this should be a use-case for wrapping a type-safe sync.Map instead of using a global lock
+	// TODO: this should be a good use-case for wrapping up a type-safe sync.Map instead of using global locks
+
 	inMut *sync.Mutex
+
 	// inputs tracks inputs for the same key and the collection they came from by index.
-	// for instance, if collection[3] maps "key" to "value", then inputs["key"][3] == "value"
+	// e.g. if collections[3] associates "key" with "value", then inputs["key"][3] == "value"
 	inputs map[string]map[int]O
 
 	outMut  *sync.RWMutex
 	outputs map[string]O
 }
 
-var _ Collection[any] = &join[any]{}
+var _ Collection[any] = &joinedCollection[any]{}
 
-func newJoin[O any](cs []Collection[O], joiner Joiner[O]) *join[O] {
-	j := &join[O]{
+func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCollection[O] {
+	j := &joinedCollection[O]{
 		id:          nextUID(),
 		collections: cs,
 		syncer:      &multiSyncer{},
@@ -81,7 +83,7 @@ func newJoin[O any](cs []Collection[O], joiner Joiner[O]) *join[O] {
 
 // getInputMap fetches and lazily initializes the output map associated with the provided key. Must only be called while
 // inMut is held
-func (j *join[O]) getInputMap(key string) map[int]O {
+func (j *joinedCollection[O]) getInputMap(key string) map[int]O {
 	if result, ok := j.inputs[key]; ok {
 		return result
 	}
@@ -89,7 +91,7 @@ func (j *join[O]) getInputMap(key string) map[int]O {
 	return j.inputs[key]
 }
 
-func (j *join[O]) GetKey(k string) *O {
+func (j *joinedCollection[O]) GetKey(k string) *O {
 	if j.joiner == nil {
 		// if collections are disjoint we can be lazy and stop early
 		for _, c := range j.collections {
@@ -109,7 +111,7 @@ func (j *join[O]) GetKey(k string) *O {
 	return nil
 }
 
-func (j *join[O]) List() []O {
+func (j *joinedCollection[O]) List() []O {
 	var res []O
 
 	// if no joiner was provided, collect and return your result on-the-fly.
@@ -134,7 +136,7 @@ func (j *join[O]) List() []O {
 	return slices.Collect(maps.Values(j.outputs))
 }
 
-func (j *join[O]) Register(f func(o Event[O])) cache.ResourceEventHandlerRegistration {
+func (j *joinedCollection[O]) Register(f func(o Event[O])) cache.ResourceEventHandlerRegistration {
 	return j.RegisterBatched(func(evs []Event[O]) {
 		for _, ev := range evs {
 			f(ev)
@@ -142,7 +144,7 @@ func (j *join[O]) Register(f func(o Event[O])) cache.ResourceEventHandlerRegistr
 	}, true)
 }
 
-func (j *join[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
 	syncer := multiSyncer{}
 	// TODO: handle deregistration
 	for _, c := range j.collections {
@@ -152,11 +154,11 @@ func (j *join[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) c
 	return syncer
 }
 
-func (j *join[O]) HasSynced() bool {
+func (j *joinedCollection[O]) HasSynced() bool {
 	return j.syncer.HasSynced()
 }
 
-func (j *join[O]) WaitUntilSynced(stop <-chan struct{}) bool {
+func (j *joinedCollection[O]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return j.syncer.WaitUntilSynced(stop)
 }
 

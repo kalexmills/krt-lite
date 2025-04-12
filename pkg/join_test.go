@@ -69,9 +69,9 @@ func TestJoin(t *testing.T) {
 
 	Images.WaitUntilSynced(ctx.Done())
 
-	assert.Empty(t, Images.List(), "expected join collection to start empty")
+	assert.Empty(t, Images.List(), "expected joinedCollection collection to start empty")
 
-	// create a pod with no images and expect join collection to be empty
+	// create a pod with no images and expect joinedCollection collection to be empty
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "name",
@@ -81,7 +81,7 @@ func TestJoin(t *testing.T) {
 	_, err := podClient.Create(ctx, pod, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	assert.Empty(t, Images.List(), "expected join collection to be empty after ineffective updates upstream")
+	assert.Empty(t, Images.List(), "expected joinedCollection collection to be empty after ineffective updates upstream")
 
 	// create a job and update a pod and expect both images to propagate
 	job := &batchv1.Job{
@@ -107,7 +107,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "istio:latest", "nikola/netshoot:latest"),
-		"expected join collection to eventually contain data from both sources")
+		"expected joinedCollection collection to eventually contain data from both sources")
 
 	// remove containers from the job and expect result to be deleted.
 	job.Spec.Template.Spec.Containers = nil
@@ -115,14 +115,14 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest"),
-		"expected join collection entries to eventually be removed when upstream updated")
+		"expected joinedCollection collection entries to eventually be removed when upstream updated")
 
 	// delete pod and expect no images.
 	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionContentsDeepEquals(Images),
-		"expected join collection to eventually be empty after all sources removed")
+		"expected joinedCollection collection to eventually be empty after all sources removed")
 
 	// ensure duplicate keys get merged
 	job.Spec.Template = PodTemplateSpecWithImages("nikola/netshoot:latest")
@@ -142,7 +142,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest"),
-		"expected join collection to eventually overlap duplicate keys correctly")
+		"expected joinedCollection collection to eventually overlap duplicate keys correctly")
 
 	// ensure many entries propagate correctly
 	pod.Spec = PodSpecWithImages("istio:latest")
@@ -161,7 +161,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest", "istio:latest", "busybox:latest", "kube-api-server:v1.21.0", "istio-sidecar:latest"),
-		"expected join collection to contain all containers")
+		"expected joinedCollection collection to contain all containers")
 }
 
 func TestCollectionJoinSync(t *testing.T) {
