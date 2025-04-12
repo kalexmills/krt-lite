@@ -12,23 +12,23 @@ import (
 )
 
 type (
-	// Mapper maps an I to an O.
+	// A Mapper maps an I to zero or one O.
 	Mapper[I, O any] func(i I) *O
 
-	// FlatMapper maps an I to many O.
+	// A FlatMapper maps an I to many O.
 	FlatMapper[I, O any] func(i I) []O
 
-	// Splitter maps an I into an O1 and an O2.
+	// A Splitter maps an I into an O1 and an O2.
 	Splitter[I, O1, O2 any] func(i I) (*O1, *O2)
 
-	// FlatSplitter maps an I into many O1 and many O2.
+	// A FlatSplitter maps an I into many O1 and many O2.
 	FlatSplitter[I, O1, O2 any] func(i I) ([]O1, []O2)
 
-	// Joiner joins two T into zero or one T.
-	Joiner[T any] func(t1, t2 T) *T
+	// A Joiner joins two or more O into one.
+	Joiner[T any] func(ts []T) T
 )
 
-// Collection is a collection of objects.
+// Collection is a collection of objects that can change over time, and can be subscribed to.
 type Collection[T any] interface {
 	GetKey(k string) *T
 
@@ -41,6 +41,39 @@ type Collection[T any] interface {
 	WaitUntilSynced(stop <-chan struct{}) bool
 
 	HasSynced() bool
+}
+
+// Singleton is a Collection containing a single value which can change over time.
+type Singleton[T any] interface {
+	StaticSingleton[T]
+	Set(*T)
+}
+
+// StaticSingleton is a Collection representing a single value that never changes. Registrants will only receive a
+// single Create event.
+type StaticSingleton[T any] interface {
+	Collection[T]
+	Get() *T
+}
+
+// NewStaticSingleton creates and returns a new StaticSingleton.
+func NewStaticSingleton[T any](initial *T, startSynced bool) StaticSingleton[T] {
+	result := newStatic[T]()
+	result.Set(initial)
+	if startSynced {
+		result.MarkSynced()
+	}
+	return result
+}
+
+// NewSingleton creates an returns a new Singleton.
+func NewSingleton[T any](initial *T, startSynced bool) Singleton[T] {
+	result := newStatic[T]()
+	result.Set(initial)
+	if startSynced {
+		result.MarkSynced()
+	}
+	return result
 }
 
 type EventType int
@@ -72,6 +105,10 @@ type Event[T any] struct {
 	Event EventType
 }
 
+func (e Event[T]) String() string {
+	return fmt.Sprintf("%v [old = %v, new = %v]", e.Event, e.Old, e.New)
+}
+
 func (e Event[T]) Latest() T {
 	if e.New == nil {
 		return *e.Old
@@ -79,7 +116,7 @@ func (e Event[T]) Latest() T {
 	return *e.New
 }
 
-func eventKey[T any](in any) (string, error) {
+func eventKey[T any](in any) (string, error) { // TODO: will we ever use this?
 	ev, ok := in.(Event[T])
 	if !ok {
 		return "", errors.New("invalid event")
@@ -87,13 +124,15 @@ func eventKey[T any](in any) (string, error) {
 	return fmt.Sprintf("%p-%p-%d", ev.Old, ev.New, ev.Event), nil
 }
 
-type HandlerContext interface {
+type HandlerContext interface { // TODO: will we use this?
 	DiscardResult()
 }
 
-type Key[O any] string
+type key[O any] string
 
-// Map creates a new collection by mapping each I into an O.
+// Map creates a new collection by mapping each I into an O. It starts a new goroutine.
+//
+// Will panic if unsupported type for I or O are used, see GetKey for details.
 func Map[I, O any](c Collection[I], f Mapper[I, O]) Collection[O] {
 	ff := func(i I) []O {
 		res := f(i)
@@ -105,19 +144,21 @@ func Map[I, O any](c Collection[I], f Mapper[I, O]) Collection[O] {
 	return FlatMap(c, ff)
 }
 
-// FlatMap creates a new collection by mapping every I into zero or more O.
+// FlatMap creates a new collection by mapping every I into zero or more O. It starts a new goroutine.
+//
+// Will panic if an unsupported type of I or O are used, see GetKey for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
 	result := &derivedCollection[I, O]{
 		transformer: f,
 		uid:         nextUID(),
 		parent:      c,
 
-		outputs:  make(map[Key[O]]O),
-		inputs:   make(map[Key[I]]I),
-		mappings: make(map[Key[I]]map[Key[O]]struct{}),
+		outputs:  make(map[key[O]]O),
+		inputs:   make(map[key[I]]I),
+		mappings: make(map[key[I]]map[key[O]]struct{}),
 		mut:      &sync.Mutex{},
 
-		registeredHandlers: make(map[*processor[Event[O]]]struct{}),
+		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
 		processorWg:        &sync.WaitGroup{},
 
 		stop:  make(chan struct{}),
@@ -139,14 +180,15 @@ func FlatSplit[I, O1, O2 any](c Collection[I], spl FlatSplitter[I, O1, O2]) (Col
 	return nil, nil
 }
 
-// Join joins together a slice of collections. If keys overlap, they are joined using the provided Joiner.
+// Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
+// Joiner. Joiner will always be called with at least two inputs.
 func Join[T any](cs []Collection[T], j Joiner[T]) Collection[T] {
-	return nil
+	return newJoin(cs, j)
 }
 
 // JoinDisjoint joins together a slice of collections whose keys do not overlap.
 func JoinDisjoint[T any](cs []Collection[T]) Collection[T] {
-	return nil
+	return newJoin(cs, nil)
 }
 
 var globalUIDCounter = atomic.Uint64{}
@@ -155,6 +197,10 @@ func nextUID() uint64 {
 	return globalUIDCounter.Add(1)
 }
 
+// GetKey infers a string key for the passed in value. Will panic if any type other than the following are passed.
+// - runtime.Object
+// - string
+// - ResourceNamer
 func GetKey[O any](o O) string {
 	switch typed := any(o).(type) {
 	case string:
@@ -165,15 +211,16 @@ func GetKey[O any](o O) string {
 	case ResourceNamer:
 		return typed.ResourceName()
 	}
-	panic(fmt.Sprintf("Cannot get Key, got %T", o))
+	panic(fmt.Sprintf("Cannot get key, got %T", o))
 }
 
-func GetTypedKey[O any](o O) Key[O] {
-	return Key[O](GetKey(o))
-}
-
+// ResourceNamer can be implemented
 type ResourceNamer interface {
 	ResourceName() string
+}
+
+func getTypedKey[O any](o O) key[O] {
+	return key[O](GetKey(o))
 }
 
 // setFromSeq forms a set from an iter.Seq.

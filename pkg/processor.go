@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 )
 
-// TODO: rename this registration handler
-type processor[T any] struct {
+// registrationHandler handles a queue of batched output events for registrations to a derived collection.
+type registrationHandler[T any] struct {
 	handler func(o []T)
 	queue   *fifo.Queue[[]T]
 
@@ -15,9 +15,9 @@ type processor[T any] struct {
 	stopCh chan struct{}
 }
 
-// newProcessor returns and starts a processor.
-func newProcessor[T any](f func(o []T)) *processor[T] {
-	result := &processor[T]{
+// newRegistrationHandler returns and starts a registrationHandler.
+func newRegistrationHandler[T any](f func(o []T)) *registrationHandler[T] {
+	result := &registrationHandler[T]{
 		handler:  f,
 		queue:    fifo.NewQueue[[]T](1024),
 		stopCh:   make(chan struct{}),
@@ -27,16 +27,16 @@ func newProcessor[T any](f func(o []T)) *processor[T] {
 	return result
 }
 
-// HasSynced is true when the processor is synced.
-func (p *processor[T]) HasSynced() bool {
+// HasSynced is true when the registrationHandler is synced.
+func (p *registrationHandler[T]) HasSynced() bool {
 	return p.isSynced.Load()
 }
 
-func (p *processor[T]) stop() {
+func (p *registrationHandler[T]) stop() {
 	close(p.stopCh)
 }
 
-func (p *processor[T]) send(os []T, isInInitialList bool) {
+func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
 	select {
 	case <-p.stopCh:
 		return
@@ -44,7 +44,7 @@ func (p *processor[T]) send(os []T, isInInitialList bool) {
 	}
 }
 
-func (p *processor[O]) run() {
+func (p *registrationHandler[O]) run() {
 	for {
 		select {
 		case <-p.stopCh:
@@ -55,7 +55,7 @@ func (p *processor[O]) run() {
 			}
 			if len(next) > 0 {
 				p.handler(next)
-				p.isSynced.Store(true) // TODO: without joins this seems sufficient.
+				p.isSynced.Store(true) // TODO: this seems sufficient.
 			}
 		}
 	}

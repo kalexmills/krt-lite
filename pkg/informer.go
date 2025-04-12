@@ -49,7 +49,7 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) Co
 	return result
 }
 
-// informer knows how to turn a cache.SharedIndexInformer into a Collection[T].
+// informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
 type informer[T runtime.Object] struct {
 	inf  cache.SharedIndexInformer
 	stop <-chan struct{}
@@ -86,9 +86,11 @@ func (i informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerReg
 }
 
 func (i informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	registration, err := i.inf.AddEventHandler(eventHandler[T]{handler: func(ev Event[T], syncing bool) {
-		f([]Event[T]{ev})
-	}})
+	registration, err := i.inf.AddEventHandler(eventHandler[T]{
+		handler: func(ev Event[T], syncing bool) {
+			f([]Event[T]{ev})
+		},
+	})
 	if err != nil {
 		panic(err) // TODO: complain differently
 	}
@@ -198,7 +200,7 @@ type TypedClient[TL runtime.Object] interface {
 }
 
 // NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
-// that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is *corev1.Pods,
+// that if O denotes a runtime.Object, then TL denotes the corresponding list object. For example, if O is *corev1.Pods,
 // TL must be *corev1.PodList.
 func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) Collection[T] {
 	return NewInformerFromListerWatcher[T](&cache.ListWatch{

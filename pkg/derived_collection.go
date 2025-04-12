@@ -16,11 +16,11 @@ type derivedCollection[I, O any] struct {
 
 	transformer FlatMapper[I, O]
 	mut         *sync.Mutex
-	inputs      map[Key[I]]I
-	outputs     map[Key[O]]O
-	mappings    map[Key[I]]map[Key[O]]struct{}
+	inputs      map[key[I]]I
+	outputs     map[key[O]]O
+	mappings    map[key[I]]map[key[O]]struct{}
 
-	registeredHandlers map[*processor[Event[O]]]struct{}
+	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 	processorWg        *sync.WaitGroup // TODO: use this to shutdown?
 
 	stop      chan struct{}
@@ -54,23 +54,23 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	recomputed := make([]map[Key[O]]O, len(inputs))
+	recomputed := make([]map[key[O]]O, len(inputs))
 	for idx, input := range inputs {
 		if input.Event == EventDelete {
 			continue
 		}
 
 		os := c.transformer(input.Latest())
-		outmap := make(map[Key[O]]O, len(os))
+		outmap := make(map[key[O]]O, len(os))
 		for _, o := range os {
-			outmap[GetTypedKey(o)] = o
+			outmap[getTypedKey(o)] = o
 		}
 		recomputed[idx] = outmap
 	}
 
 	for idx, input := range inputs {
 		i := input.Latest()
-		iKey := GetTypedKey(i)
+		iKey := getTypedKey(i)
 
 		// plumb input events to output events
 		if input.Event == EventDelete {
@@ -95,7 +95,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 			c.mappings[iKey] = newKeys
 			c.inputs[iKey] = i
 
-			allKeys := make(map[Key[O]]struct{})
+			allKeys := make(map[key[O]]struct{})
 			maps.Copy(allKeys, newKeys)
 			maps.Copy(allKeys, oldKeys)
 
@@ -141,7 +141,7 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 func (c *derivedCollection[I, O]) GetKey(k string) *O {
 	c.mut.Lock()
 	defer c.mut.Unlock()
-	result, ok := c.outputs[Key[O](k)]
+	result, ok := c.outputs[key[O](k)]
 	if !ok {
 		return nil
 	}
@@ -163,7 +163,7 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) cache.ResourceEve
 }
 
 func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	p := newProcessor(f)
+	p := newRegistrationHandler(f)
 	c.processorWg.Add(1)
 	go p.run()
 
@@ -187,9 +187,7 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 
 	p.send(events, true)
 
-	c.registrantsSynced = p
-
-	return c.registrantsSynced
+	return p
 }
 
 func (c *derivedCollection[I, O]) WaitUntilSynced(stop <-chan struct{}) bool {
