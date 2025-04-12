@@ -1,3 +1,8 @@
+![golang-ci](https://github.com/kalexmills/krt-lite/actions/workflows/golang-ci.yml/badge.svg?branch=main)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/kalexmills/krt-lite)
+![GitHub License](https://img.shields.io/github/license/kalexmills/krt-lite)
+
+
 # krt-lite
 
 istio/krt, without Istio.
