@@ -45,25 +45,9 @@ type Collection[T any] interface {
 
 // Singleton is a Collection containing a single value which can change over time.
 type Singleton[T any] interface {
-	StaticSingleton[T]
-	Set(*T)
-}
-
-// StaticSingleton is a Collection representing a single value that never changes. Registrants will only receive a
-// single Create event.
-type StaticSingleton[T any] interface {
 	Collection[T]
 	Get() *T
-}
-
-// NewStaticSingleton creates and returns a new StaticSingleton.
-func NewStaticSingleton[T any](initial *T, startSynced bool) StaticSingleton[T] {
-	result := newStatic[T]()
-	result.Set(initial)
-	if startSynced {
-		result.MarkSynced()
-	}
-	return result
+	Set(*T)
 }
 
 // NewSingleton creates an returns a new Singleton.

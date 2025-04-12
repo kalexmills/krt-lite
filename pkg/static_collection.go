@@ -91,7 +91,7 @@ func (s *static[T]) Set(now *T) {
 			New:   now,
 			Event: EventAdd,
 		}
-		s.currKey = GetKey(now)
+		s.currKey = GetKey(*now)
 	} else if now == nil {
 		ev = Event[T]{
 			Old:   old,
@@ -104,7 +104,7 @@ func (s *static[T]) Set(now *T) {
 			Old:   old,
 			Event: EventUpdate,
 		}
-		s.currKey = GetKey(now)
+		s.currKey = GetKey(*now)
 	}
 	for _, h := range s.handlers {
 		h([]Event[T]{ev})
