@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-type static[T any] struct {
+type singleton[T any] struct {
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
 	id      uint64
@@ -16,8 +16,8 @@ type static[T any] struct {
 	handlers []func(o []Event[T])
 }
 
-func newStatic[T any]() *static[T] {
-	return &static[T]{
+func newSingleton[T any]() *singleton[T] {
+	return &singleton[T]{
 		val:    atomic.Pointer[T]{},
 		synced: atomic.Bool{},
 		id:     nextUID(),
@@ -25,16 +25,16 @@ func newStatic[T any]() *static[T] {
 	}
 }
 
-var _ Collection[any] = &static[any]{}
+var _ Collection[any] = &singleton[any]{}
 
-func (s *static[T]) GetKey(k string) *T {
+func (s *singleton[T]) GetKey(k string) *T {
 	if s.currKey == k {
 		return s.val.Load()
 	}
 	return nil
 }
 
-func (s *static[T]) List() []T {
+func (s *singleton[T]) List() []T {
 	v := s.val.Load()
 	if v == nil {
 		return nil
@@ -42,7 +42,7 @@ func (s *static[T]) List() []T {
 	return []T{*v}
 }
 
-func (s *static[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
+func (s *singleton[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
 	return s.RegisterBatched(func(evs []Event[T]) {
 		for _, ev := range evs {
 			f(ev)
@@ -50,7 +50,7 @@ func (s *static[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegi
 	}, true)
 }
 
-func (s *static[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
 	if runExistingState {
 		v := s.val.Load()
 		if v != nil {
@@ -67,19 +67,19 @@ func (s *static[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool)
 	return alwaysSynced{}
 }
 
-func (s *static[T]) WaitUntilSynced(stop <-chan struct{}) bool {
+func (s *singleton[T]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return cache.WaitForCacheSync(stop, s.HasSynced)
 }
 
-func (s *static[T]) HasSynced() bool {
+func (s *singleton[T]) HasSynced() bool {
 	return s.synced.Load()
 }
 
-func (s *static[T]) Get() *T {
+func (s *singleton[T]) Get() *T {
 	return s.val.Load()
 }
 
-func (s *static[T]) Set(now *T) {
+func (s *singleton[T]) Set(now *T) {
 	old := s.val.Swap(now)
 	if old == now {
 		return
@@ -111,6 +111,10 @@ func (s *static[T]) Set(now *T) {
 	}
 }
 
-func (s *static[T]) MarkSynced() {
+func (s *singleton[T]) MarkSynced() {
 	s.synced.Store(true)
+}
+
+func (s *singleton[T]) index(e KeyExtractor[T]) indexer[T] {
+	panic("attempted to index a singleton")
 }

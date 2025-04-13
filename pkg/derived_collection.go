@@ -15,13 +15,17 @@ type derivedCollection[I, O any] struct {
 	parent Collection[I]
 
 	transformer FlatMapper[I, O]
-	mut         *sync.Mutex
-	inputs      map[key[I]]I
-	outputs     map[key[O]]O
-	mappings    map[key[I]]map[key[O]]struct{}
+
+	mut      *sync.RWMutex // mut protects inputs, outputs, and mappings
+	inputs   map[key[I]]I
+	outputs  map[key[O]]O
+	mappings map[key[I]]map[key[O]]struct{}
+
+	idxMut  *sync.RWMutex // idxMut protects indices.
+	indices []*index[O]
 
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
-	processorWg        *sync.WaitGroup // TODO: use this to shutdown?
+	registrationWg     *sync.WaitGroup // TODO: use this for graceful shutdown?
 
 	stop      chan struct{}
 	parentReg cache.ResourceEventHandlerRegistration
@@ -73,6 +77,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		iKey := getTypedKey(i)
 
 		// plumb input events to output events
+
 		if input.Event == EventDelete {
 			for oKey := range c.mappings[iKey] {
 				old, ok := c.outputs[oKey]
@@ -128,6 +133,10 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		return
 	}
 
+	for _, idx := range c.indices {
+		idx.handleEvents(outputEvents)
+	}
+
 	c.distributeEvents(outputEvents, !c.HasSynced())
 }
 
@@ -139,8 +148,8 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 }
 
 func (c *derivedCollection[I, O]) GetKey(k string) *O {
-	c.mut.Lock()
-	defer c.mut.Unlock()
+	c.mut.RLock()
+	defer c.mut.RUnlock()
 	result, ok := c.outputs[key[O](k)]
 	if !ok {
 		return nil
@@ -149,8 +158,8 @@ func (c *derivedCollection[I, O]) GetKey(k string) *O {
 }
 
 func (c *derivedCollection[I, O]) List() []O {
-	c.mut.Lock()
-	defer c.mut.Unlock()
+	c.mut.RLock()
+	defer c.mut.RUnlock()
 	return slices.Collect(maps.Values(c.outputs))
 }
 
@@ -164,8 +173,12 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) cache.ResourceEve
 
 func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
 	p := newRegistrationHandler(f)
-	c.processorWg.Add(1)
-	go p.run()
+
+	c.registrationWg.Add(1)
+	go func() {
+		defer c.registrationWg.Done()
+		p.run()
+	}()
 
 	c.registeredHandlers[p] = struct{}{}
 
@@ -199,4 +212,21 @@ func (c *derivedCollection[I, O]) HasSynced() bool {
 		return c.parent.HasSynced()
 	}
 	return c.registrantsSynced.HasSynced()
+}
+
+func (c *derivedCollection[I, O]) index(e KeyExtractor[O]) indexer[O] {
+	idx := newIndex(c, e, func(oKeys map[key[O]]struct{}) []O {
+		c.mut.RLock()
+		defer c.mut.RUnlock()
+		result := make([]O, 0, len(oKeys))
+		for oKey := range oKeys {
+			result = append(result, c.outputs[oKey])
+		}
+		return result
+	})
+
+	c.idxMut.Lock()
+	defer c.idxMut.Unlock()
+	c.indices = append(c.indices, idx)
+	return idx
 }

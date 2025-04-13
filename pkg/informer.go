@@ -46,7 +46,7 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) Co
 
 	go result.inf.Run(result.stop)
 
-	return result
+	return &result
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
@@ -56,7 +56,7 @@ type informer[T runtime.Object] struct {
 }
 
 // GetKey retrieves an object by its key. For a Kubernetes informer, this must be the namespace and name of the object.
-func (i informer[T]) GetKey(k string) *T {
+func (i *informer[T]) GetKey(k string) *T {
 	obj, exists, err := i.inf.GetIndexer().GetByKey(k)
 	if err != nil || !exists {
 		return nil
@@ -65,7 +65,7 @@ func (i informer[T]) GetKey(k string) *T {
 	return &typed
 }
 
-func (i informer[T]) List() []T {
+func (i *informer[T]) List() []T {
 	var res []T
 	err := cache.ListAllByNamespace(i.inf.GetIndexer(), metav1.NamespaceAll, labels.Everything(), func(obj any) {
 		cast := obj.(T)
@@ -77,7 +77,7 @@ func (i informer[T]) List() []T {
 	return res
 }
 
-func (i informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
+func (i *informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
 	return i.RegisterBatched(func(events []Event[T]) {
 		for _, ev := range events {
 			f(ev)
@@ -85,7 +85,7 @@ func (i informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerReg
 	}, true)
 }
 
-func (i informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
 	registration, err := i.inf.AddEventHandler(eventHandler[T]{
 		handler: func(ev Event[T], syncing bool) {
 			f([]Event[T]{ev})
@@ -97,7 +97,7 @@ func (i informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState boo
 	return registration
 }
 
-func (i informer[T]) WaitUntilSynced(
+func (i *informer[T]) WaitUntilSynced(
 	stop <-chan struct{}) (result bool) {
 	if i.inf.HasSynced() {
 		return true
@@ -130,8 +130,42 @@ func (i informer[T]) WaitUntilSynced(
 	}
 }
 
-func (i informer[T]) HasSynced() bool {
+func (i *informer[T]) HasSynced() bool {
 	return i.inf.HasSynced()
+}
+
+func (i *informer[T]) index(e KeyExtractor[T]) indexer[T] {
+	idxKey := fmt.Sprintf("%p", e) // index based on the extractor fun.
+	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
+		idxKey: func(obj any) ([]string, error) {
+			t := extract[T](obj)
+			if t == nil {
+				return nil, nil
+			}
+			return e(*t), nil
+		},
+	})
+	if err != nil {
+		// TODO: log that we failed to add the requested indexer
+	}
+	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer()}
+}
+
+type informerIndexer[T any] struct {
+	idxKey string
+	inf    cache.Indexer
+}
+
+func (i *informerIndexer[T]) Lookup(key string) []T {
+	res, err := i.inf.Index(i.idxKey, key)
+	if err != nil {
+		// TODO: log that we failed to lookup by key
+	}
+	var result []T
+	for _, obj := range res {
+		result = append(result, obj.(T))
+	}
+	return result
 }
 
 type eventHandler[T runtime.Object] struct {
@@ -184,7 +218,8 @@ func extract[T runtime.Object](obj any) *T {
 		// TODO: complain again about the cache sending us bad data
 		return nil
 	}
-	return &o
+	// TODO: complain about not being able to find an object.
+	return nil
 }
 
 // TypedClient is an interface implemented by typed Kubernetes clientsets. TL denotes the type of a list kind, e.g.

@@ -22,6 +22,9 @@ type (
 
 	// A Joiner joins two or more O into one.
 	Joiner[T any] func(ts []T) T
+
+	// A KeyExtractor is used to extract index keys from an object.
+	KeyExtractor[T any] func(t T) []string
 )
 
 // Collection is a collection of objects that can change over time, and can be subscribed to.
@@ -37,6 +40,8 @@ type Collection[T any] interface {
 	WaitUntilSynced(stop <-chan struct{}) bool
 
 	HasSynced() bool
+
+	index(KeyExtractor[T]) indexer[T]
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -46,9 +51,15 @@ type Singleton[T any] interface {
 	Set(*T)
 }
 
+// Index is a Collection whose items can be fetched by keys.
+type Index[K comparable, T any] interface {
+	Collection[T]
+	Lookup(key K) []T
+}
+
 // NewSingleton creates an returns a new Singleton.
 func NewSingleton[T any](initial *T, startSynced bool) Singleton[T] {
-	result := newStatic[T]()
+	result := newSingleton[T]()
 	result.Set(initial)
 	if startSynced {
 		result.MarkSynced()
@@ -121,17 +132,18 @@ func Map[I, O any](c Collection[I], f Mapper[I, O]) Collection[O] {
 // Will panic if an unsupported type of I or O are used, see GetKey for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
 	result := &derivedCollection[I, O]{
-		transformer: f,
-		uid:         nextUID(),
 		parent:      c,
+		uid:         nextUID(),
+		transformer: f,
 
 		outputs:  make(map[key[O]]O),
 		inputs:   make(map[key[I]]I),
 		mappings: make(map[key[I]]map[key[O]]struct{}),
-		mut:      &sync.Mutex{},
+		mut:      &sync.RWMutex{},
+		idxMut:   &sync.RWMutex{},
 
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
-		processorWg:        &sync.WaitGroup{},
+		registrationWg:     &sync.WaitGroup{},
 
 		stop:  make(chan struct{}),
 		queue: fifo.NewQueue[[]Event[I]](1024),

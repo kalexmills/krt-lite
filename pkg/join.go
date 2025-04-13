@@ -24,6 +24,9 @@ type joinedCollection[O any] struct {
 
 	outMut  *sync.RWMutex
 	outputs map[string]O
+
+	idxMut  *sync.RWMutex
+	indices []*index[O]
 }
 
 var _ Collection[any] = &joinedCollection[any]{}
@@ -39,6 +42,9 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCol
 		outMut:  &sync.RWMutex{},
 		inputs:  make(map[string]map[int]O),
 		outputs: make(map[string]O),
+
+		idxMut:  &sync.RWMutex{},
+		indices: nil,
 	}
 
 	for idx, c := range cs {
@@ -46,36 +52,45 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCol
 
 		if joiner != nil {
 			// register with all our parents so we can track which inputs come from which collection.
-			c.Register(func(ev Event[O]) {
-				o := ev.Latest()
-				k := GetKey(o)
-
-				// update the appropriate valmap with the most recent item
-
+			c.RegisterBatched(func(events []Event[O]) {
 				j.inMut.Lock()
 				defer j.inMut.Unlock()
-
-				inputMap := j.getInputMap(k)
-				switch ev.Event {
-				case EventAdd:
-					inputMap[idx] = o
-				case EventUpdate:
-					inputMap[idx] = o
-				case EventDelete:
-					delete(inputMap, idx)
-				}
 
 				j.outMut.Lock()
 				defer j.outMut.Unlock()
 
-				if len(inputMap) == 0 {
-					delete(j.outputs, k)
-				} else if len(inputMap) == 1 {
-					j.outputs[k] = inputMap[idx]
-				} else {
-					j.outputs[k] = j.joiner(slices.Collect(maps.Values(inputMap)))
+				for _, ev := range events {
+					o := ev.Latest()
+					k := GetKey(o)
+
+					// update the appropriate valmap with the most recent item
+
+					inputMap := j.getInputMap(k)
+					switch ev.Event {
+					case EventAdd:
+						inputMap[idx] = o
+					case EventUpdate:
+						inputMap[idx] = o
+					case EventDelete:
+						delete(inputMap, idx)
+					}
+
+					if len(inputMap) == 0 {
+						delete(j.outputs, k)
+					} else if len(inputMap) == 1 {
+						j.outputs[k] = inputMap[idx]
+					} else {
+						j.outputs[k] = j.joiner(slices.Collect(maps.Values(inputMap)))
+					}
 				}
-			})
+
+				j.idxMut.RLock()
+				defer j.idxMut.RUnlock()
+
+				for _, idx := range j.indices {
+					idx.handleEvents(events)
+				}
+			}, true)
 		}
 	}
 
@@ -161,6 +176,24 @@ func (j *joinedCollection[O]) HasSynced() bool {
 
 func (j *joinedCollection[O]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return j.syncer.WaitUntilSynced(stop)
+}
+
+func (j *joinedCollection[O]) index(e KeyExtractor[O]) indexer[O] {
+	idx := newIndex(j, e, func(oKeys map[key[O]]struct{}) []O {
+		j.outMut.RLock()
+		defer j.outMut.RUnlock()
+		result := make([]O, 0, len(oKeys))
+		for oKey := range oKeys {
+			result = append(result, j.outputs[string(oKey)])
+		}
+		return result
+	})
+
+	j.idxMut.Lock()
+	defer j.idxMut.Unlock()
+
+	j.indices = append(j.indices, idx)
+	return idx
 }
 
 type multiSyncer struct {
