@@ -114,7 +114,3 @@ func (s *singleton[T]) Set(now *T) {
 func (s *singleton[T]) MarkSynced() {
 	s.synced.Store(true)
 }
-
-func (s *singleton[T]) index(e KeyExtractor[T]) indexer[T] {
-	panic("attempted to index a singleton")
-}

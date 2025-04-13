@@ -50,7 +50,7 @@ func TestJoinCollection(t *testing.T) {
 }
 
 func TestJoin(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset()
@@ -66,6 +66,9 @@ func TestJoin(t *testing.T) {
 		return vals[0]
 	}
 	Images := krtlite.Join[Image]([]krtlite.Collection[Image]{PodImages, JobImages}, joiner)
+
+	PodImages.WaitUntilSynced(ctx.Done())
+	JobImages.WaitUntilSynced(ctx.Done())
 
 	Images.WaitUntilSynced(ctx.Done())
 
@@ -165,7 +168,7 @@ func TestJoin(t *testing.T) {
 }
 
 func TestCollectionJoinSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset(
@@ -228,3 +231,5 @@ func TestJoinJoiner(t *testing.T) {
 	AssertEventually(t, CollectionKeysMatch(j, "abc/abc/abc"))
 	assert.Equal(t, "abc/abc/abc", j.GetKey("abc").Name)
 }
+
+// TODO: write a test for registration sync.

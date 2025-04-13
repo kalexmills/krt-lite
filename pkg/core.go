@@ -23,16 +23,11 @@ type (
 	// A Joiner joins two or more O into one.
 	Joiner[T any] func(ts []T) T
 
-	// A KeyExtractor is used to extract index keys from an object.
+	// A KeyExtractor is used to extract mapIndex keys from an object.
 	KeyExtractor[T any] func(t T) []string
 )
 
-// Collection is a collection of objects that can change over time, and can be subscribed to.
-type Collection[T any] interface {
-	GetKey(k string) *T
-
-	List() []T
-
+type EventStream[T any] interface {
 	Register(f func(o Event[T])) cache.ResourceEventHandlerRegistration
 
 	RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration
@@ -40,8 +35,28 @@ type Collection[T any] interface {
 	WaitUntilSynced(stop <-chan struct{}) bool
 
 	HasSynced() bool
+}
 
-	index(KeyExtractor[T]) indexer[T]
+type IndexableCollection[T any] interface { // TODO: get rid of this and panic if Index is not supported
+	Collection[T]
+
+	Index(extractor KeyExtractor[T]) Index[T]
+}
+
+// ComparableObject is implemented by pointer-types that implement runtime.Object. For example *corev1.Pod implements
+// ComparableObject, while not corev1.Pod does not.
+type ComparableObject interface {
+	runtime.Object
+	comparable
+}
+
+// Collection is a collection of objects that can change over time, and can be subscribed to.
+type Collection[T any] interface {
+	EventStream[T]
+
+	GetKey(key string) *T
+
+	List() []T
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -51,10 +66,9 @@ type Singleton[T any] interface {
 	Set(*T)
 }
 
-// Index is a Collection whose items can be fetched by keys.
-type Index[K comparable, T any] interface {
-	Collection[T]
-	Lookup(key K) []T
+// An Index allows subsets of items in a collection to
+type Index[T any] interface {
+	Lookup(key string) []T
 }
 
 // NewSingleton creates an returns a new Singleton.
@@ -113,10 +127,10 @@ type HandlerContext interface { // TODO: will we use this?
 
 type key[O any] string
 
-// Map creates a new collection by mapping each I into an O. It starts a new goroutine.
+// Map creates a new collection by mapping each I into an O.
 //
-// Will panic if unsupported type for I or O are used, see GetKey for details.
-func Map[I, O any](c Collection[I], f Mapper[I, O]) Collection[O] {
+// Panics will occur if an unsupported type for I or O are used, see GetKey for details.
+func Map[I, O any](c Collection[I], f Mapper[I, O]) IndexableCollection[O] {
 	ff := func(i I) []O {
 		res := f(i)
 		if res == nil {
@@ -127,10 +141,10 @@ func Map[I, O any](c Collection[I], f Mapper[I, O]) Collection[O] {
 	return FlatMap(c, ff)
 }
 
-// FlatMap creates a new collection by mapping every I into zero or more O. It starts a new goroutine.
+// FlatMap creates a new collection by mapping every I into zero or more O.
 //
-// Will panic if an unsupported type of I or O are used, see GetKey for details.
-func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
+// Panics will occur if an unsupported type of I or O are used, see GetKey for details.
+func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) IndexableCollection[O] {
 	result := &derivedCollection[I, O]{
 		parent:      c,
 		uid:         nextUID(),
@@ -143,11 +157,18 @@ func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
 		idxMut:   &sync.RWMutex{},
 
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
-		registrationWg:     &sync.WaitGroup{},
 
-		stop:  make(chan struct{}),
-		queue: fifo.NewQueue[[]Event[I]](1024),
+		stop:       make(chan struct{}),
+		markSynced: &sync.Once{},
+		inputQueue: fifo.NewQueue[any](1024),
+
+		syncedCh: make(chan struct{}),
 	}
+	result.syncer = &multiSyncer{
+		syncers: []cache.InformerSynced{
+			c.HasSynced,
+			channelSyncer{synced: result.syncedCh}.HasSynced,
+		}}
 
 	go result.run()
 
@@ -156,12 +177,12 @@ func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) Collection[O] {
 
 // Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
 // Joiner. Joiner will always be called with at least two inputs.
-func Join[T any](cs []Collection[T], j Joiner[T]) Collection[T] {
+func Join[T any](cs []Collection[T], j Joiner[T]) IndexableCollection[T] {
 	return newJoinedCollection(cs, j)
 }
 
 // JoinDisjoint joins together a slice of collections whose keys do not overlap.
-func JoinDisjoint[T any](cs []Collection[T]) Collection[T] {
+func JoinDisjoint[T any](cs []Collection[T]) IndexableCollection[T] {
 	return newJoinedCollection(cs, nil)
 }
 
@@ -206,7 +227,3 @@ func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
 	})
 	return result
 }
-
-type alwaysSynced struct{}
-
-func (s alwaysSynced) HasSynced() bool { return true }

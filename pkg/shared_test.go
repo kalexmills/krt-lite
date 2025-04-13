@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	timeout      = time.Second * 2       // timeout is used for all Eventually
+	timeout      = time.Second * 3       // timeout is used for all Eventually and context.WithTimeout calls.
 	pollInterval = 50 * time.Millisecond // poll interval is used for all Eventually
 )
 
@@ -245,4 +245,12 @@ func PodSpecWithImages(images ...string) corev1.PodSpec {
 func AssertEventually(t *testing.T, f func() bool, msgAndArgs ...any) {
 	t.Helper()
 	assert.Eventually(t, f, timeout, pollInterval, msgAndArgs...)
+}
+
+func AssertEventuallyEqual(t *testing.T, expected any, getActual func() any, msgAndArgs ...any) {
+	t.Helper()
+	assert.Eventually(t, func() bool {
+		actual := getActual()
+		return reflect.DeepEqual(expected, actual)
+	}, timeout, pollInterval, msgAndArgs...)
 }

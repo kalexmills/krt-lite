@@ -10,16 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
-	"log"
+	"log/slog"
 	"time"
 )
-
-// ComparableObject is implemented by pointer-types that implement runtime.Object. For example *corev1.Pod implements
-// ComparableObject, while not corev1.Pod does not.
-type ComparableObject interface {
-	runtime.Object
-	comparable
-}
 
 const keyIdx = "namespace/name"
 
@@ -33,26 +26,35 @@ func indexByNamespaceName(in any) ([]string, error) {
 }
 
 // NewInformerFromListerWatcher creates a new collection from the provided client
-func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) Collection[T] {
-	result := informer[T]{
+func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) IndexableCollection[T] {
+	i := informer[T]{
 		inf: cache.NewSharedIndexInformer(
 			lw,
 			zero[T](),
 			0,
 			cache.Indexers{keyIdx: indexByNamespaceName},
 		),
-		stop: make(chan struct{}),
+		stop:   make(chan struct{}),
+		synced: make(chan struct{}),
 	}
+	i.syncer = &channelSyncer{synced: i.synced}
 
-	go result.inf.Run(result.stop)
+	go func() {
+		cache.WaitForCacheSync(nil, i.inf.HasSynced)
+		close(i.synced)
+	}()
 
-	return &result
+	go i.inf.Run(i.stop) // stuck on waiting
+
+	return &i
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
 type informer[T runtime.Object] struct {
-	inf  cache.SharedIndexInformer
-	stop <-chan struct{}
+	inf    cache.SharedIndexInformer
+	stop   chan struct{}
+	synced chan struct{}
+	syncer *channelSyncer
 }
 
 // GetKey retrieves an object by its key. For a Kubernetes informer, this must be the namespace and name of the object.
@@ -86,27 +88,27 @@ func (i *informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRe
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	registration, err := i.inf.AddEventHandler(eventHandler[T]{
+	reg, err := i.inf.AddEventHandler(eventHandler[T]{ // TODO: use this registration
 		handler: func(ev Event[T], syncing bool) {
 			f([]Event[T]{ev})
 		},
 	})
+	i.inf.GetStore().List()
 	if err != nil {
-		panic(err) // TODO: complain differently
+		slog.Error("error registering informer event handler", "err", err)
 	}
-	return registration
+	return &multiSyncer{syncers: []cache.InformerSynced{i.HasSynced, reg.HasSynced}}
 }
 
-func (i *informer[T]) WaitUntilSynced(
-	stop <-chan struct{}) (result bool) {
-	if i.inf.HasSynced() {
+func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
+	if i.syncer.HasSynced() {
 		return true
 	}
 
 	t0 := time.Now()
 
 	defer func() {
-		log.Printf("synced in %v", time.Since(t0))
+		slog.Info("informer synced", "waitTime", time.Since(t0))
 	}()
 
 	for {
@@ -115,27 +117,27 @@ func (i *informer[T]) WaitUntilSynced(
 			return false
 		default:
 		}
-		if i.inf.HasSynced() {
+		if i.syncer.HasSynced() {
 			return true
 		}
 
 		// sleep for 1 second, but return if the stop chan is closed.
-		t := time.NewTimer(time.Millisecond * 50) // TODO: allow users to set the poll interval
+		t := time.NewTimer(time.Millisecond * 100) // TODO: allow users to set the poll interval
 		select {
 		case <-stop:
 			return false
 		case <-t.C:
 		}
-		log.Printf("waiting for sync for %v", time.Since(t0))
+		slog.Info("informer waiting for sync", "waitTime", time.Since(t0))
 	}
 }
 
 func (i *informer[T]) HasSynced() bool {
-	return i.inf.HasSynced()
+	return i.syncer.HasSynced()
 }
 
-func (i *informer[T]) index(e KeyExtractor[T]) indexer[T] {
-	idxKey := fmt.Sprintf("%p", e) // index based on the extractor fun.
+func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
+	idxKey := fmt.Sprintf("%p", e) // mapIndex based on the extractor fun.
 	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
 		idxKey: func(obj any) ([]string, error) {
 			t := extract[T](obj)
@@ -146,7 +148,7 @@ func (i *informer[T]) index(e KeyExtractor[T]) indexer[T] {
 		},
 	})
 	if err != nil {
-		// TODO: log that we failed to add the requested indexer
+		slog.Error("failed to add requested indexer", "err", err)
 	}
 	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer()}
 }
@@ -157,9 +159,9 @@ type informerIndexer[T any] struct {
 }
 
 func (i *informerIndexer[T]) Lookup(key string) []T {
-	res, err := i.inf.Index(i.idxKey, key)
+	res, err := i.inf.ByIndex(i.idxKey, key)
 	if err != nil {
-		// TODO: log that we failed to lookup by key
+		slog.Info("indexer failed to perform key lookup", "key", key)
 	}
 	var result []T
 	for _, obj := range res {
@@ -218,7 +220,7 @@ func extract[T runtime.Object](obj any) *T {
 		// TODO: complain again about the cache sending us bad data
 		return nil
 	}
-	// TODO: complain about not being able to find an object.
+	slog.Error("failed to extract object from type", "type", fmt.Sprintf("%T", obj), "expected", fmt.Sprintf("%T", o))
 	return nil
 }
 
@@ -232,7 +234,7 @@ type TypedClient[TL runtime.Object] interface {
 // NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
 // that if O denotes a runtime.Object, then TL denotes the corresponding list object. For example, if O is *corev1.Pods,
 // TL must be *corev1.PodList.
-func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) Collection[T] {
+func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) IndexableCollection[T] {
 	return NewInformerFromListerWatcher[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			return c.List(ctx, opts)

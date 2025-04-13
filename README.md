@@ -22,3 +22,4 @@ Writing Kubernetes controllers is easier when you can:
 - [ ] Indexer -- indexing an existing collection for quicker lookup.
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
+- [ ] Pluggable logging via slog.

@@ -4,13 +4,8 @@ import (
 	"sync"
 )
 
-type indexer[T any] interface {
-	Lookup(key string) []T
-}
-
-// index implements an in-memory index which keeps itself up-to-date via an event stream. Lookups are performed by
-// calling GetKey for every item returned.
-type index[O any] struct {
+// mapIndex implements an in-memory index to track groups of items in a collection by key.
+type mapIndex[O any] struct {
 	parent    Collection[O]
 	extractor KeyExtractor[O]
 
@@ -21,8 +16,8 @@ type index[O any] struct {
 	fetchByKeys func(map[key[O]]struct{}) []O
 }
 
-func newIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchByKeys func(map[key[O]]struct{}) []O) *index[O] {
-	return &index[O]{
+func newIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchByKeys func(map[key[O]]struct{}) []O) *mapIndex[O] {
+	return &mapIndex[O]{
 		parent:  parent,
 		indexed: make(map[string]map[key[O]]struct{}),
 
@@ -32,7 +27,7 @@ func newIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchByKey
 	}
 }
 
-func (i *index[O]) handleEvents(events []Event[O]) {
+func (i *mapIndex[O]) handleEvents(events []Event[O]) {
 	i.mut.Lock()
 	defer i.mut.Unlock()
 	for _, ev := range events {
@@ -58,7 +53,7 @@ func (i *index[O]) handleEvents(events []Event[O]) {
 	}
 }
 
-func (i *index[O]) Lookup(key string) []O {
+func (i *mapIndex[O]) Lookup(key string) []O {
 	i.mut.RLock()
 	defer i.mut.RUnlock()
 	oKeys, ok := i.indexed[key]
@@ -67,4 +62,12 @@ func (i *index[O]) Lookup(key string) []O {
 	}
 
 	return i.fetchByKeys(oKeys)
+}
+
+func (i *mapIndex[O]) WaitUntilSynced(stop <-chan struct{}) bool {
+	return i.parent.WaitUntilSynced(stop)
+}
+
+func (i *mapIndex[O]) HasSynced() bool {
+	return i.parent.HasSynced()
 }

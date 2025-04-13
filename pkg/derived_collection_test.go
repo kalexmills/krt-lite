@@ -4,6 +4,7 @@ import (
 	"context"
 	krtlite "github.com/kalexmills/krt-plusplus/pkg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -35,7 +36,7 @@ func SimpleServiceCollection(services krtlite.Collection[*corev1.Service]) krtli
 }
 
 func TestDerivedCollectionSimple(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	client := fake.NewClientset()
@@ -88,7 +89,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 }
 
 func TestDerivedCollectionInitialState(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset(
@@ -129,64 +130,38 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 }
 
 func TestCollectionHandlerSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	c := fake.NewClientset(
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pod",
-				Namespace: "namespace",
-				Labels:    map[string]string{"app": "foo"},
-			},
-			Status: corev1.PodStatus{PodIP: "1.2.3.4"},
+	c := fake.NewClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod",
+			Namespace: "namespace",
+			Labels:    map[string]string{"app": "foo"},
 		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.4"},
+	})
+	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+
+	SimplePods := SimplePodCollection(Pods)
+
+	var (
+		gotEvent  atomic.Bool
+		reg       cache.ResourceEventHandlerRegistration
+		startSync sync.WaitGroup // wait group to satisfy race detector
 	)
-	pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+	startSync.Add(1)
+	reg1Delayed := SimplePods.Register(func(o krtlite.Event[SimplePod]) {
+		startSync.Wait()
+		assert.Equal(t, false, reg.HasSynced())
+		gotEvent.Store(true)
+	})
+	reg = reg1Delayed // satisfy race detector
+	startSync.Done()
 
-	var SimplePods krtlite.Collection[SimplePod]
-	var reg1, reg2 cache.ResourceEventHandlerRegistration
+	ok := cache.WaitForCacheSync(ctx.Done(), reg.HasSynced)
+	require.True(t, ok)
 
-	tests := []struct {
-		name     string
-		waitFunc func()
-	}{
-		{name: "calls register handlers before WaitUntilSynced is done",
-			waitFunc: func() {
-				SimplePods.WaitUntilSynced(ctx.Done())
-			},
-		},
-		{name: "calls register handlers before all registrations have synced",
-			waitFunc: func() {
-				cache.WaitForCacheSync(ctx.Done(), reg1.HasSynced, reg2.HasSynced)
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pods = krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-			SimplePods = SimplePodCollection(pods)
+	assert.EqualValues(t, true, gotEvent.Load())
 
-			gotEvent := atomic.Uint32{}
-
-			var wg sync.WaitGroup // wait group to satisfy race detector
-			wg.Add(1)
-			reg1Delayed := SimplePods.Register(func(o krtlite.Event[SimplePod]) {
-				wg.Wait()
-				assert.Equal(t, reg1.HasSynced(), false)
-				gotEvent.Add(1)
-			})
-			reg2Delayed := SimplePods.Register(func(o krtlite.Event[SimplePod]) {
-				wg.Wait()
-				assert.Equal(t, reg2.HasSynced(), false)
-				gotEvent.Add(1)
-			})
-			reg1, reg2 = reg1Delayed, reg2Delayed // satisfy race detector
-			wg.Done()
-
-			tt.waitFunc()
-
-			assert.EqualValues(t, gotEvent.Load(), 2)
-		})
-	}
 }

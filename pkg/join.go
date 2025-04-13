@@ -26,7 +26,7 @@ type joinedCollection[O any] struct {
 	outputs map[string]O
 
 	idxMut  *sync.RWMutex
-	indices []*index[O]
+	indices []*mapIndex[O]
 }
 
 var _ Collection[any] = &joinedCollection[any]{}
@@ -52,7 +52,7 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCol
 
 		if joiner != nil {
 			// register with all our parents so we can track which inputs come from which collection.
-			c.RegisterBatched(func(events []Event[O]) {
+			reg := c.RegisterBatched(func(events []Event[O]) {
 				j.inMut.Lock()
 				defer j.inMut.Unlock()
 
@@ -91,6 +91,8 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O]) *joinedCol
 					idx.handleEvents(events)
 				}
 			}, true)
+
+			j.syncer.syncers = append(j.syncer.syncers, reg.HasSynced)
 		}
 	}
 
@@ -161,13 +163,14 @@ func (j *joinedCollection[O]) Register(f func(o Event[O])) cache.ResourceEventHa
 }
 
 func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	syncer := multiSyncer{}
+	s := multiSyncer{}
 	// TODO: handle deregistration
+	// register with each parent collection, and to our list of collections waiting for sync.
 	for _, c := range j.collections {
 		reg := c.RegisterBatched(f, runExistingState)
-		syncer.syncers = append(j.syncer.syncers, reg.HasSynced)
+		s.syncers = append(s.syncers, reg.HasSynced)
 	}
-	return syncer
+	return s
 }
 
 func (j *joinedCollection[O]) HasSynced() bool {
@@ -178,7 +181,7 @@ func (j *joinedCollection[O]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return j.syncer.WaitUntilSynced(stop)
 }
 
-func (j *joinedCollection[O]) index(e KeyExtractor[O]) indexer[O] {
+func (j *joinedCollection[O]) Index(e KeyExtractor[O]) Index[O] {
 	idx := newIndex(j, e, func(oKeys map[key[O]]struct{}) []O {
 		j.outMut.RLock()
 		defer j.outMut.RUnlock()
@@ -194,21 +197,4 @@ func (j *joinedCollection[O]) index(e KeyExtractor[O]) indexer[O] {
 
 	j.indices = append(j.indices, idx)
 	return idx
-}
-
-type multiSyncer struct {
-	syncers []cache.InformerSynced
-}
-
-func (c multiSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stop, c.syncers...)
-}
-
-func (c multiSyncer) HasSynced() bool {
-	for _, s := range c.syncers {
-		if !s() {
-			return false
-		}
-	}
-	return true
 }

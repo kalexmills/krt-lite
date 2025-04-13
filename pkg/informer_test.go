@@ -3,6 +3,10 @@ package pkg_test
 import (
 	"context"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/tools/cache"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	krtlite "github.com/kalexmills/krt-plusplus/pkg"
@@ -12,7 +16,7 @@ import (
 )
 
 func TestNewInformer(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset()
@@ -69,4 +73,37 @@ func TestNewInformer(t *testing.T) {
 	err = c.CoreV1().ConfigMaps("ns").Delete(ctx, cmB.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 	tt.Wait("delete/ns/b")
+}
+
+func TestInformerSync(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	c := fake.NewClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name",
+			Namespace: "namespace",
+		},
+	})
+
+	ConfigMaps := krtlite.NewInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+
+	var (
+		gotEvent  atomic.Bool
+		reg       cache.ResourceEventHandlerRegistration
+		startSync sync.WaitGroup // wait group to satisfy race detector
+	)
+	startSync.Add(1)
+	reg1Delayed := ConfigMaps.Register(func(o krtlite.Event[*corev1.ConfigMap]) {
+		startSync.Wait()
+		assert.Equal(t, false, reg.HasSynced())
+		gotEvent.Store(true)
+	})
+	reg = reg1Delayed // satisfy race detector
+	startSync.Done()
+
+	ok := cache.WaitForCacheSync(ctx.Done(), reg.HasSynced)
+	require.True(t, ok)
+
+	assert.EqualValues(t, true, gotEvent.Load())
 }
