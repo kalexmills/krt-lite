@@ -71,6 +71,7 @@ type collectorMeta struct {
 	name string
 }
 
+//nolint:unused // used to implement an interface
 func (c collectorMeta) getName() string {
 	return c.name
 }

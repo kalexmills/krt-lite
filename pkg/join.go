@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"k8s.io/client-go/tools/cache"
-	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -68,6 +67,12 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
 	}
 
+	// note: we have to set the idSyncer prior to calling RegisterBatched on our parents to avoid a data race.
+	if joiner != nil {
+		j.idSyncer = newIDSyncer(len(cs))
+		j.syncer.syncers = append(j.syncer.syncers, j.idSyncer.HasSynced)
+	}
+
 	for idx, c := range cs {
 		j.syncer.syncers = append(j.syncer.syncers, c.HasSynced)
 
@@ -77,10 +82,6 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 
 			j.syncer.syncers = append(j.syncer.syncers, reg.HasSynced)
 		}
-	}
-	if joiner != nil {
-		j.idSyncer = newIDSyncer(len(cs))
-		j.syncer.syncers = append(j.syncer.syncers, j.idSyncer.HasSynced)
 	}
 	return j
 }
@@ -155,7 +156,6 @@ func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 		}
 
 		if !j.idSyncer.HasSynced() {
-			slog.Info("marking as synced", "idx", idx, "name", j.name)
 			j.idSyncer.MarkSynced(idx)
 		} else if j.HasSynced() {
 			j.distributeEvents(outEvents, false)
@@ -164,7 +164,6 @@ func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 }
 
 func (j *joinedCollection[O]) distributeEvents(events []Event[O], isInInitialList bool) {
-	slog.Info("distributing output events", "events", events, "isInitialList", isInInitialList, "name", j.name)
 	j.idxMut.RLock()
 	for _, idx := range j.indices {
 		idx.handleEvents(events)
@@ -265,9 +264,7 @@ func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingS
 	}
 
 	go func() {
-		slog.Info("waiting until synced", "syncerCount", len(j.syncer.syncers), "name", j.name)
 		j.syncer.WaitUntilSynced(j.stop) // wait for all parents to sync before snapshotting and sending
-		slog.Info("synced!", "syncerCount", len(j.syncer.syncers), "name", j.name)
 		p.send(j.snapshotInitialState(), true)
 	}()
 

@@ -3,7 +3,6 @@ package pkg
 import (
 	"github.com/kalexmills/krt-plusplus/pkg/fifo"
 	"k8s.io/client-go/tools/cache"
-	"log/slog"
 	"maps"
 	"slices"
 	"sync"
@@ -104,7 +103,6 @@ func (c *derivedCollection[I, O]) run() {
 		return // TODO: a noisy error
 	}
 
-	slog.Info("parent has synced", "name", c.name, "parentName", c.parent.getName())
 	go c.inputQueue.Run(c.stop)
 
 	c.processInputQueue()
@@ -125,7 +123,6 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 		case input := <-c.inputQueue.Out():
 			if _, ok := input.(eventParentIsSynced); ok {
 				close(c.syncedCh)
-				slog.Info("collection synced", "name", c.name)
 				continue
 			}
 			events := input.([]Event[I])
@@ -360,7 +357,6 @@ type registrationHandler[T any] struct {
 }
 
 func (p *registrationHandler[T]) markSynced() {
-	slog.Info("registration handler has synced", "parentName", p.parentName)
 	close(p.syncedCh)
 }
 
@@ -370,26 +366,23 @@ func (p *registrationHandler[T]) HasSynced() bool {
 }
 
 func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
-	slog.Info("receiving events", "events", os, "parentName", p.parentName, "isInInitialList", isInInitialList)
 	select {
 	case <-p.stopCh:
 		return
 	case p.queue.In() <- os:
 	}
-	if isInInitialList {
+	if !isInInitialList {
+		return
+	}
+
+	select {
+	case <-p.syncedCh:
+		return
+	default:
 		select {
-		case <-p.syncedCh:
-			slog.Info("regHandler: already synced", "parentName", p.parentName)
+		case <-p.stopCh:
 			return
-		default:
-			//p.sendSyncedOnce.Do(func() { // TODO: send sync event, but only once?
-			select {
-			case <-p.stopCh:
-				return
-			case p.queue.In() <- eventParentIsSynced{}:
-				slog.Info("regHandler: sending parent is synced", "parentName", p.parentName)
-			}
-			//})
+		case p.queue.In() <- eventParentIsSynced{}:
 		}
 	}
 }

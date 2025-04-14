@@ -179,7 +179,7 @@ type informerIndexer[T any] struct {
 func (i *informerIndexer[T]) Lookup(key string) []T {
 	res, err := i.inf.ByIndex(i.idxKey, key)
 	if err != nil {
-		slog.Info("indexer failed to perform key lookup", "key", key, "parentName", i.parentName, "err", err)
+		slog.Error("indexer failed to perform key lookup", "err", err, "key", key, "parentName", i.parentName)
 	}
 	var result []T
 	for _, obj := range res {

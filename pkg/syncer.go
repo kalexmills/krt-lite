@@ -43,7 +43,7 @@ func (s channelSyncer) HasSynced() bool {
 
 // idSyncer is a bit like a waitgroup.
 type idSyncer struct {
-	count   *atomic.Int32
+	count   *atomic.Int64
 	indices *sync.Map
 	synced  chan struct{}
 }
@@ -58,11 +58,11 @@ func newIDSyncer(n int) *idSyncer {
 		}
 	}
 
-	count := &atomic.Int32{}
-	count.Store(int32(n))
+	count := &atomic.Int64{}
+	count.Store(int64(n))
 	indices := &sync.Map{}
 	for i := 0; i < n; i++ {
-		indices.Store(int32(i), false)
+		indices.Store(i, false)
 	}
 	return &idSyncer{
 		count:   count,
@@ -90,7 +90,7 @@ func (s *idSyncer) MarkSynced(id int) {
 	case <-s.synced:
 		return
 	default:
-		if s.indices.CompareAndSwap(int32(id), false, true) {
+		if s.indices.CompareAndSwap(id, false, true) {
 			x := s.count.Add(-1)
 			if x == 0 {
 				close(s.synced)
