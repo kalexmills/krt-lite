@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"k8s.io/client-go/tools/cache"
 	"maps"
 	"reflect"
 	"slices"
@@ -52,7 +51,7 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 		collectorMeta: newCollectorMeta(opts),
 		collections:   cs,
 		stop:          make(chan struct{}),
-		syncer:        &multiSyncer{},
+		syncer:        newMultiSyncer(),
 		joiner:        joiner,
 
 		inMut:   &sync.Mutex{},
@@ -70,17 +69,17 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 	// note: we have to set the idSyncer prior to calling RegisterBatched on our parents to avoid a data race.
 	if joiner != nil {
 		j.idSyncer = newIDSyncer(len(cs))
-		j.syncer.syncers = append(j.syncer.syncers, j.idSyncer.HasSynced)
+		j.syncer.Add(j.idSyncer)
 	}
 
 	for idx, c := range cs {
-		j.syncer.syncers = append(j.syncer.syncers, c.HasSynced)
+		j.syncer.Add(c)
 
 		if joiner != nil {
 			// register with all our parents so we can track which inputs come from which collection.
 			reg := c.RegisterBatched(j.handleEvents(idx), true)
 
-			j.syncer.syncers = append(j.syncer.syncers, reg.HasSynced)
+			j.syncer.Add(reg)
 		}
 	}
 	return j
@@ -232,7 +231,7 @@ func (j *joinedCollection[O]) List() []O {
 	return slices.Collect(maps.Values(j.outputs))
 }
 
-func (j *joinedCollection[O]) Register(f func(o Event[O])) cache.ResourceEventHandlerRegistration {
+func (j *joinedCollection[O]) Register(f func(o Event[O])) Syncer {
 	return j.RegisterBatched(func(evs []Event[O]) {
 		for _, ev := range evs {
 			f(ev)
@@ -240,14 +239,14 @@ func (j *joinedCollection[O]) Register(f func(o Event[O])) cache.ResourceEventHa
 	}, true)
 }
 
-func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
 	if j.joiner == nil {
 		s := multiSyncer{}
 		// TODO: handle deregistration
 		// register with each parent collection, and add to our of collections waiting for sync.
 		for _, c := range j.collections {
 			reg := c.RegisterBatched(f, runExistingState)
-			s.syncers = append(s.syncers, reg.HasSynced)
+			s.syncers = append(s.syncers, reg)
 		}
 	}
 

@@ -26,9 +26,9 @@ type (
 )
 
 type EventStream[T any] interface {
-	Register(f func(o Event[T])) cache.ResourceEventHandlerRegistration
+	Register(f func(o Event[T])) Syncer
 
-	RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration
+	RegisterBatched(f func(o []Event[T]), runExistingState bool) Syncer
 
 	WaitUntilSynced(stop <-chan struct{}) bool
 
@@ -97,7 +97,6 @@ const (
 	EventAdd EventType = iota
 	EventUpdate
 	EventDelete
-	EventSynced // TODO: never sent or used
 )
 
 func (e EventType) String() string {
@@ -108,8 +107,6 @@ func (e EventType) String() string {
 		return "update"
 	case EventDelete:
 		return "delete"
-	case EventSynced:
-		return "synced"
 	}
 	return "unknown"
 }

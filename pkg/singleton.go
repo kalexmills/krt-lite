@@ -52,7 +52,7 @@ func (s *singleton[T]) List() []T {
 	return []T{*v}
 }
 
-func (s *singleton[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
+func (s *singleton[T]) Register(f func(ev Event[T])) Syncer {
 	return s.RegisterBatched(func(evs []Event[T]) {
 		for _, ev := range evs {
 			f(ev)
@@ -60,7 +60,7 @@ func (s *singleton[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerR
 	}, true)
 }
 
-func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Syncer {
 	if runExistingState {
 		v := s.val.Load()
 		if v != nil {

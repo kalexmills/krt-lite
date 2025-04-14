@@ -86,7 +86,7 @@ func (i *informer[T]) List() []T {
 	return res
 }
 
-func (i *informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRegistration {
+func (i *informer[T]) Register(f func(ev Event[T])) Syncer {
 	return i.RegisterBatched(func(events []Event[T]) {
 		for _, ev := range events {
 			f(ev)
@@ -94,7 +94,7 @@ func (i *informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRe
 	}, true)
 }
 
-func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Syncer {
 	reg, err := i.inf.AddEventHandler(eventHandler[T]{
 		handler: func(ev Event[T], syncing bool) {
 			f([]Event[T]{ev})
@@ -104,7 +104,12 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 	if err != nil {
 		slog.Error("error registering informer event handler", "err", err)
 	}
-	return &multiSyncer{syncers: []cache.InformerSynced{i.HasSynced, reg.HasSynced}}
+	synced := make(chan struct{})
+	go func() {
+		cache.WaitForCacheSync(i.stop, reg.HasSynced) // TODO: there's another ~100ms on startup to be saved by polling ourselves.
+		close(synced)
+	}()
+	return newMultiSyncer(i, &channelSyncer{synced: synced})
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
@@ -230,15 +235,15 @@ func extract[T runtime.Object](obj any) *T {
 	// check for tombstone from cache
 	tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 	if !ok {
-		// TODO: complain about the cache sending us bad data
+		slog.Error("failed to extract object of unexpected type", "obj", obj)
 		return nil
 	}
 	o, ok = tombstone.Obj.(T)
 	if !ok {
-		// TODO: complain again about the cache sending us bad data
+		slog.Error("failed to extract object from tombstone", "objType", fmt.Sprintf("%T", tombstone.Obj), "expectedType", fmt.Sprintf("%T", o))
 		return nil
 	}
-	slog.Error("failed to extract object from type", "type", fmt.Sprintf("%T", obj), "expected", fmt.Sprintf("%T", o))
+	slog.Error("failed to extract object from type", "actualType", fmt.Sprintf("%T", obj), "expectedTyped", fmt.Sprintf("%T", o))
 	return nil
 }
 

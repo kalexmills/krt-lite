@@ -61,10 +61,10 @@ type derivedCollection[I, O any] struct {
 	inputQueue *fifo.Queue[any] // inputQueue entries will always be either eventParentIsSynced or []Event[I]
 }
 
-func newDerivedCollection[I, O any](c Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
-	result := &derivedCollection[I, O]{
+func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
+	c := &derivedCollection[I, O]{
 		collectorMeta: newCollectorMeta(opts),
-		parent:        c,
+		parent:        parent,
 		transformer:   f,
 
 		outputs:  make(map[key[O]]O),
@@ -82,12 +82,11 @@ func newDerivedCollection[I, O any](c Collection[I], f FlatMapper[I, O], opts []
 
 		syncedCh: make(chan struct{}),
 	}
-	result.syncer = &multiSyncer{
-		syncers: []cache.InformerSynced{
-			c.HasSynced,
-			channelSyncer{synced: result.syncedCh}.HasSynced,
-		}}
-	return result
+	c.syncer = newMultiSyncer(
+		parent,
+		&channelSyncer{synced: c.syncedCh},
+	)
+	return c
 }
 
 var _ Collection[any] = &derivedCollection[int, any]{}
@@ -248,7 +247,7 @@ func (c *derivedCollection[I, O]) List() []O {
 	return slices.Collect(maps.Values(c.outputs))
 }
 
-func (c *derivedCollection[I, O]) Register(f func(o Event[O])) cache.ResourceEventHandlerRegistration {
+func (c *derivedCollection[I, O]) Register(f func(o Event[O])) Syncer {
 	return c.RegisterBatched(func(events []Event[O]) {
 		for _, ev := range events {
 			f(ev)
@@ -256,7 +255,7 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) cache.ResourceEve
 	}, true)
 }
 
-func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
+func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
 	p := newRegistrationHandler(c, f)
 
 	c.regHandlerMut.Lock()
@@ -321,19 +320,17 @@ func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
 // newRegistrationHandler returns a registration handler, starting up the internal inputQueue.
 func newRegistrationHandler[O any](parent Collection[O], f func(o []Event[O])) *registrationHandler[Event[O]] {
 	h := &registrationHandler[Event[O]]{
-		parentName:     parent.getName(),
-		handler:        f,
-		queue:          fifo.NewQueue[any](1024),
-		stopCh:         make(chan struct{}),
-		syncedCh:       make(chan struct{}),
-		sendSyncedOnce: &sync.Once{},
+		parentName:      parent.getName(),
+		handler:         f,
+		queue:           fifo.NewQueue[any](1024),
+		stopCh:          make(chan struct{}),
+		syncedCh:        make(chan struct{}),
+		closeSyncedOnce: &sync.Once{},
 	}
-	h.syncer = &multiSyncer{
-		syncers: []cache.InformerSynced{
-			parent.HasSynced,
-			channelSyncer{synced: h.syncedCh}.HasSynced,
-		},
-	}
+	h.syncer = newMultiSyncer(
+		parent,
+		channelSyncer{synced: h.syncedCh},
+	)
 
 	return h
 }
@@ -351,13 +348,19 @@ type registrationHandler[T any] struct {
 
 	stopCh chan struct{}
 
-	sendSyncedOnce *sync.Once
-	syncedCh       chan struct{}
-	syncer         *multiSyncer
+	closeSyncedOnce *sync.Once
+	syncedCh        chan struct{}
+	syncer          *multiSyncer
 }
 
 func (p *registrationHandler[T]) markSynced() {
-	close(p.syncedCh)
+	p.closeSyncedOnce.Do(func() {
+		close(p.syncedCh)
+	})
+}
+
+func (p *registrationHandler[T]) WaitUntilSynced(stop <-chan struct{}) bool {
+	return p.syncer.WaitUntilSynced(stop)
 }
 
 // HasSynced is true when the registrationHandler is synced.
