@@ -87,6 +87,7 @@ func BenchmarkQueue_Send(b *testing.B) {
 
 func BenchmarkQueue_Receive(b *testing.B) {
 	stop := make(chan struct{})
+	defer close(stop)
 
 	q := NewQueue[int](1024)
 	q.Run(stop)

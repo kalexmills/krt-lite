@@ -1,7 +1,7 @@
 package pkg
 
 func WithName(name string) CollectorOption {
-	return func(m *collectorMeta) {
+	return func(m *collectionMeta) {
 		m.name = name
 	}
 }

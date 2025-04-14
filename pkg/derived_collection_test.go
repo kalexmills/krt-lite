@@ -28,11 +28,11 @@ func SimpleServiceCollection(services krtlite.Collection[*corev1.Service]) krtli
 			Named:    NewNamed(i),
 			Selector: i.Spec.Selector,
 		}
-	})
+	}, krtlite.WithName("SimpleService"))
 }
 
 func TestDerivedCollectionSimple(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*5)
 	defer cancel()
 
 	client := fake.NewClientset()
@@ -85,7 +85,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 }
 
 func TestDerivedCollectionInitialState(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*5)
 	defer cancel()
 
 	c := fake.NewClientset(
@@ -93,6 +93,7 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "pod",
 				Namespace: "namespace",
+				Labels:    map[string]string{"app": "foo"},
 			},
 			Status: corev1.PodStatus{PodIP: "1.2.3.4"},
 		},
@@ -101,6 +102,7 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 				Name:      "pod-2",
 				Namespace: "namespace",
 			},
+			Status: corev1.PodStatus{PodIP: "0.0.0.0"},
 		},
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
@@ -115,12 +117,95 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 
 	// assert that collections are equal immediately after waiting for sync.
 	SimplePods := SimplePodCollection(pods)
-	assert.Equal(t, SimplePods.WaitUntilSynced(ctx.Done()), true)
-	CollectionContentsDeepEquals(SimplePods, NewSimplePod("pod", "namespace", "1.2.3.4", nil))
-
 	SimpleServices := SimpleServiceCollection(services)
-	assert.Equal(t, SimpleServices.WaitUntilSynced(ctx.Done()), true)
-	CollectionContentsDeepEquals(SimpleServices, NewSimpleService("svc", "namespace", map[string]string{"app": "foo"}))
+	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+	assert.Equal(t, true, SimpleEndpoints.WaitUntilSynced(ctx.Done()))
 
-	// TODO: include SimpleEndpoints once Fetch has been implemented
+	assert.Equal(t, []SimpleEndpoint{{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.4"}},
+		ListSorted(SimpleEndpoints))
+}
+
+func TestCollectionMerged(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*5)
+	defer cancel()
+
+	c := fake.NewClientset()
+	podClient := c.CoreV1().Pods("namespace")
+	pods := krtlite.NewInformer[*corev1.Pod](ctx, podClient, krtlite.WithName("Pods"))
+	svcClient := c.CoreV1().Services("namespace")
+	services := krtlite.NewInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
+
+	// TODO: not waiting for informers to start causes messages to be dropped.
+	pods.WaitUntilSynced(ctx.Done())
+	services.WaitUntilSynced(ctx.Done())
+
+	SimplePods := SimplePodCollection(pods)
+	SimpleServices := SimpleServiceCollection(services)
+	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+
+	assert.Empty(t, ListSorted(SimpleEndpoints))
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod",
+			Namespace: "namespace",
+			Labels:    map[string]string{"app": "foo"},
+		},
+	}
+	pod, err := podClient.Create(ctx, pod, metav1.CreateOptions{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, ListSorted(SimpleEndpoints), "expected no endpoints")
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc",
+			Namespace: "namespace",
+		},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
+	}
+	svc, err = svcClient.Create(ctx, svc, metav1.CreateOptions{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, ListSorted(SimpleEndpoints), "expected no endpoints")
+
+	pod.Status = corev1.PodStatus{PodIP: "1.2.3.4"}
+	pod, err = podClient.Update(ctx, pod, metav1.UpdateOptions{})
+	assert.NoError(t, err)
+
+	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+		SimpleEndpoint{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.4"},
+	), "expected an endpoint once pod is assigned an IP")
+
+	pod.Status.PodIP = "1.2.3.5"
+	pod, err = podClient.UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	assert.NoError(t, err)
+
+	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+		SimpleEndpoint{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.5"},
+	), "expected endpoints to change when podIP changes")
+
+	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints),
+		"expected endpoints to be deleted when pod is removed") // empty
+
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name2",
+			Namespace: "namespace",
+			Labels:    map[string]string{"app": "foo"},
+		},
+		Status: corev1.PodStatus{PodIP: "2.3.4.5"},
+	}
+	_, err = podClient.Create(ctx, pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	_, err = podClient.Create(ctx, pod2, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+		SimpleEndpoint{pod2.Name, svc.Name, pod2.Namespace, pod2.Status.PodIP},
+		SimpleEndpoint{pod.Name, svc.Name, pod.Namespace, pod.Status.PodIP},
+	), "expected multiple endpoints once pods are created")
 }

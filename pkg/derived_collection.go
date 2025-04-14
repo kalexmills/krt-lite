@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"github.com/kalexmills/krt-plusplus/pkg/fifo"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 	"maps"
 	"slices"
@@ -35,7 +34,7 @@ func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectorOpt
 // derivedCollection implements a collection whose contents are computed based on the contents of other collections.
 // Dependencies between collections are tracked to ensure updates are propagated properly.
 type derivedCollection[I, O any] struct {
-	collectorMeta
+	collectionMeta
 
 	parent Collection[I]
 
@@ -53,7 +52,7 @@ type derivedCollection[I, O any] struct {
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 
 	stop      chan struct{}
-	parentReg cache.ResourceEventHandlerRegistration
+	parentReg Syncer
 
 	markSynced *sync.Once
 	syncedCh   chan struct{}
@@ -66,15 +65,11 @@ type derivedCollection[I, O any] struct {
 	inputQueue *fifo.Queue[inputEvent[I]]
 }
 
-type depIdx struct {
-	sourceID uint64
-}
-
 func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
 	c := &derivedCollection[I, O]{
-		collectorMeta: newCollectorMeta(opts),
-		parent:        parent,
-		transformer:   f,
+		collectionMeta: newCollectorMeta(opts),
+		parent:         parent,
+		transformer:    f,
 
 		outputs:  make(map[key[O]]O),
 		inputs:   make(map[key[I]]I),
@@ -171,17 +166,21 @@ func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
 // run registers this derivedCollection with its parent, starts up the inputQueue, and blocks to process the input
 // queue.
 func (c *derivedCollection[I, O]) run() {
+	c.logger().Debug("waiting for parent to sync")
 	if !c.parent.WaitUntilSynced(c.stop) {
 		return
 	}
+	c.logger().Debug("parent synced")
+
 	c.parentReg = c.parent.RegisterBatched(c.pushInputEvents, true)
 
-	// wait for parent to sync before running.
-	if !cache.WaitForCacheSync(c.stop, c.parent.HasSynced) {
-		return // TODO: a noisy error
-	}
-
+	// parent registration will push to the queue, so it must be running before we wait for registration to sync.
 	go c.inputQueue.Run(c.stop)
+
+	if !c.parentReg.WaitUntilSynced(c.stop) {
+		return
+	}
+	c.logger().Debug("parent registration synced")
 
 	c.processInputQueue()
 }
@@ -203,20 +202,27 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 		case <-c.stop:
 			return
 		case input := <-c.inputQueue.Out():
-			if input.ParentIsSynced() {
+			if input.IsParentIsSynced() {
+				c.logger().Debug("parent has synced", "parentName", c.parent.getName())
 				close(c.syncedCh)
 				continue
 			}
 			if input.IsFetchEvents() {
-				c.handleEventsFromFetch(input.sourceID, input.fetchEvents)
+				c.logger().Debug("received fetch events", "fromCollectionID", input.sourceID)
+				c.handleFetchEvents(input.sourceID, input.fetchEvents)
+				continue
 			}
-			c.handleEvents(input.events) // TODO: handleEventsFromFetch goes here too
+			c.logger().Debug("received events", "count", len(input.events))
+			c.handleEvents(input.events)
 		}
 	}
 }
 
 // handleEvents handles all input events by computing the corresponding output and dispatching downstream events based
 // on any changes to the current state of the collection.
+//
+// handleEvents does not need to lock for access to several derivedCollection fields, as all calls are executed
+// sequentially via the inputQueue.
 func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	var outputEvents []Event[O]
 
@@ -322,8 +328,7 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 	}
 }
 
-func (c *derivedCollection[I, O]) handleEventsFromFetch(sourceID uint64, events []Event[any]) {
-	c.mut.RLock() // TODO: use a task queue to avoid all this locking
+func (c *derivedCollection[I, O]) handleFetchEvents(sourceID uint64, events []Event[any]) {
 	changedKeys, ok := c.depsBySourceID[sourceID]
 	if !ok {
 		return
@@ -359,7 +364,6 @@ func (c *derivedCollection[I, O]) handleEventsFromFetch(sourceID uint64, events 
 			res = append(res, e)
 		}
 	}
-	c.mut.RUnlock()
 	c.handleEvents(res)
 }
 
@@ -368,10 +372,10 @@ func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, 
 	// without filtering or FetchOne, every dependency change requires a recomputation
 	c.dependencies[iKey] = ktx.dependencies
 	for _, dep := range ktx.dependencies {
-		if _, ok := c.depsBySourceID[dep.id]; !ok {
-			c.depsBySourceID[dep.id] = make(map[key[I]]struct{})
+		if _, ok := c.depsBySourceID[dep.collectionID]; !ok {
+			c.depsBySourceID[dep.collectionID] = make(map[key[I]]struct{})
 		}
-		c.depsBySourceID[dep.id][iKey] = struct{}{}
+		c.depsBySourceID[dep.collectionID][iKey] = struct{}{}
 	}
 }
 
@@ -379,9 +383,9 @@ func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, 
 func (c *derivedCollection[I, O]) dependencyDelete(iKey key[I]) {
 	if deps, ok := c.dependencies[iKey]; ok {
 		for _, dep := range deps {
-			delete(c.depsBySourceID[dep.id], iKey)
-			if len(c.depsBySourceID[dep.id]) == 0 {
-				delete(c.depsBySourceID, dep.id)
+			delete(c.depsBySourceID[dep.collectionID], iKey)
+			if len(c.depsBySourceID[dep.collectionID]) == 0 {
+				delete(c.depsBySourceID, dep.collectionID)
 			}
 		}
 		delete(c.dependencies, iKey)
@@ -524,8 +528,8 @@ func fetchEvents[I any](sourceID uint64, events []Event[any]) inputEvent[I] {
 	return inputEvent[I]{header: isFetchEvents, fetchEvents: events, sourceID: sourceID}
 }
 
-// ParentIsSynced means this event indicates the parent is synced. No events accompany this message.
-func (e *inputEvent[I]) ParentIsSynced() bool {
+// IsParentIsSynced means this event indicates the parent is synced. No events accompany this message.
+func (e *inputEvent[I]) IsParentIsSynced() bool {
 	return (e.header & parentIsSynced) > 0
 }
 

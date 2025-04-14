@@ -33,7 +33,7 @@ func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c T
 // NewInformerFromListerWatcher creates a new collection from the provided cache.ListerWatcher.
 func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, opts ...CollectorOption) IndexableCollection[T] {
 	i := informer[T]{
-		collectorMeta: newCollectorMeta(opts),
+		collectionMeta: newCollectorMeta(opts),
 		inf: cache.NewSharedIndexInformer(
 			lw,
 			zero[T](),
@@ -46,7 +46,8 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, op
 	i.syncer = &channelSyncer{synced: i.synced}
 
 	go func() {
-		cache.WaitForCacheSync(nil, i.inf.HasSynced)
+		cache.WaitForCacheSync(i.stop, i.inf.HasSynced) // TODO: use our own polling wait instead of WaitForCacheSync
+		i.logger().Debug("informer has synced")
 		close(i.synced)
 	}()
 
@@ -57,7 +58,7 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, op
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
 type informer[T runtime.Object] struct {
-	collectorMeta
+	collectionMeta
 	inf    cache.SharedIndexInformer
 	stop   chan struct{}
 	synced chan struct{}
@@ -100,15 +101,17 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 			f([]Event[T]{ev})
 		},
 	})
-	i.inf.GetStore().List()
 	if err != nil {
-		slog.Error("error registering informer event handler", "err", err)
+		i.logger().Error("error registering informer event handler", "err", err)
 	}
+
 	synced := make(chan struct{})
 	go func() {
-		cache.WaitForCacheSync(i.stop, reg.HasSynced) // TODO: there's another ~100ms on startup to be saved by polling ourselves.
+		cache.WaitForCacheSync(i.stop, reg.HasSynced) // TODO: there's a max of ~100ms on startup to be saved by polling ourselves.
+		i.logger().Debug("informer registration has synced")
 		close(synced)
 	}()
+
 	return newMultiSyncer(i, &channelSyncer{synced: synced})
 }
 
@@ -120,7 +123,7 @@ func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
 	t0 := time.Now()
 
 	defer func() {
-		slog.Info("informer synced", "waitTime", time.Since(t0))
+		i.logger().Info("informer synced", "waitTime", time.Since(t0))
 	}()
 
 	for {
@@ -140,7 +143,7 @@ func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
 			return false
 		case <-t.C:
 		}
-		slog.Info("informer waiting for sync", "waitTime", time.Since(t0))
+		i.logger().Info("informer waiting for sync", "waitTime", time.Since(t0))
 	}
 }
 
@@ -149,7 +152,7 @@ func (i *informer[T]) HasSynced() bool {
 }
 
 func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
-	idxKey := fmt.Sprintf("%p", e) // mapIndex based on the extractor fun.
+	idxKey := fmt.Sprintf("%p", e) // map based on the extractor func.
 	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
 		idxKey: func(obj any) ([]string, error) {
 			t := extract[T](obj)
@@ -160,7 +163,7 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 		},
 	})
 	if err != nil {
-		slog.Error("failed to add requested indexer", "err", err)
+		i.logger().Error("failed to add requested indexer", "err", err)
 	}
 	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer()}
 }

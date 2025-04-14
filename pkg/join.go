@@ -20,7 +20,7 @@ func JoinDisjoint[T any](cs []Collection[T], opts ...CollectorOption) IndexableC
 
 // joinedCollection joins together the results of several collections, all of which have the same type.
 type joinedCollection[O any] struct {
-	collectorMeta
+	collectionMeta
 	collections []Collection[O]
 	stop        chan struct{}
 	joiner      Joiner[O]
@@ -48,11 +48,11 @@ var _ Collection[any] = &joinedCollection[any]{}
 
 func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []CollectorOption) *joinedCollection[O] {
 	j := &joinedCollection[O]{
-		collectorMeta: newCollectorMeta(opts),
-		collections:   cs,
-		stop:          make(chan struct{}),
-		syncer:        newMultiSyncer(),
-		joiner:        joiner,
+		collectionMeta: newCollectorMeta(opts),
+		collections:    cs,
+		stop:           make(chan struct{}),
+		syncer:         newMultiSyncer(),
+		joiner:         joiner,
 
 		inMut:   &sync.Mutex{},
 		outMut:  &sync.RWMutex{},

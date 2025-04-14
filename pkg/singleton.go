@@ -17,7 +17,7 @@ func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectorOption) 
 }
 
 type singleton[T any] struct {
-	collectorMeta
+	collectionMeta
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
 	currKey string
@@ -28,10 +28,10 @@ type singleton[T any] struct {
 
 func newSingleton[T any](opts []CollectorOption) *singleton[T] {
 	return &singleton[T]{
-		collectorMeta: newCollectorMeta(opts),
-		val:           atomic.Pointer[T]{},
-		synced:        atomic.Bool{},
-		mut:           new(sync.RWMutex),
+		collectionMeta: newCollectorMeta(opts),
+		val:            atomic.Pointer[T]{},
+		synced:         atomic.Bool{},
+		mut:            new(sync.RWMutex),
 	}
 }
 
@@ -78,7 +78,7 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 }
 
 func (s *singleton[T]) WaitUntilSynced(stop <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stop, s.HasSynced)
+	return cache.WaitForCacheSync(stop, s.HasSynced) // TODO: remove WaitForCacheSync
 }
 
 func (s *singleton[T]) HasSynced() bool {

@@ -5,6 +5,8 @@ import (
 	"iter"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
+	"log/slog"
 	"sync/atomic"
 )
 
@@ -57,6 +59,8 @@ type Collection[T any] interface {
 	getName() string
 
 	getUID() uint64
+
+	logger() *slog.Logger
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -66,29 +70,34 @@ type Singleton[T any] interface {
 	Set(*T)
 }
 
-type collectorMeta struct {
+type collectionMeta struct {
 	uid  uint64
 	name string
 }
 
-//nolint:unused // used to implement an interface
-func (c collectorMeta) getName() string {
+//nolint:unused // TODO: remove if still unused
+func (c collectionMeta) getName() string {
 	return c.name
 }
 
-func (c collectorMeta) getUID() uint64 {
+//nolint:unused // TODO: remove if still unused
+func (c collectionMeta) getUID() uint64 {
 	return c.uid
 }
 
-func newCollectorMeta(options []CollectorOption) collectorMeta {
-	meta := &collectorMeta{uid: nextUID()}
+func (c collectionMeta) logger() *slog.Logger {
+	return slog.With("uid", c.uid, "collectionName", c.name)
+}
+
+func newCollectorMeta(options []CollectorOption) collectionMeta {
+	meta := &collectionMeta{uid: nextUID()}
 	for _, option := range options {
 		option(meta)
 	}
 	return *meta
 }
 
-type CollectorOption func(m *collectorMeta)
+type CollectorOption func(m *collectionMeta)
 
 // An Index allows subsets of items in a collection to be indexed.
 type Index[T any] interface {
@@ -189,4 +198,17 @@ func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
 		return true
 	})
 	return result
+}
+
+func castEvent[I, O any](o Event[I]) Event[O] {
+	e := Event[O]{
+		Event: o.Event,
+	}
+	if o.Old != nil {
+		e.Old = ptr.To(any(*o.Old).(O))
+	}
+	if o.New != nil {
+		e.New = ptr.To(any(*o.New).(O))
+	}
+	return e
 }

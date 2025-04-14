@@ -2,6 +2,7 @@ package pkg_test
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"reflect"
 	"slices"
 	"sort"
@@ -17,7 +18,7 @@ import (
 )
 
 const (
-	timeout      = time.Second * 3       // timeout is used for all Eventually and kontext.WithTimeout calls.
+	timeout      = time.Second * 2       // timeout is used for all Eventually and kontext.WithTimeout calls.
 	pollInterval = 50 * time.Millisecond // poll interval is used for all Eventually
 )
 
@@ -103,6 +104,35 @@ func SimpleNamespaceCollection(pods krtlite.Collection[*corev1.Namespace]) krtli
 			Labeled: NewLabeled(i.Labels),
 		}
 	}, krtlite.WithName("SimpleNamespaces"))
+}
+
+type SimpleEndpoint struct {
+	Pod       string
+	Service   string
+	Namespace string
+	IP        string
+}
+
+func (s SimpleEndpoint) ResourceName() string {
+	return "/" + s.Namespace + "/" + s.Service + "/" + s.Pod
+}
+
+func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtlite.Collection[SimpleService]) krtlite.Collection[SimpleEndpoint] {
+	return krtlite.FlatMap[SimpleService, SimpleEndpoint](services, func(ctx krtlite.Context, svc SimpleService) []SimpleEndpoint {
+		pods := krtlite.Fetch(ctx, pods)
+		var res []SimpleEndpoint
+		for _, pod := range pods {
+			if labels.SelectorFromSet(svc.Selector).Matches(labels.Set(pod.Labels)) {
+				res = append(res, SimpleEndpoint{
+					Pod:       pod.Name,
+					Service:   svc.Name,
+					Namespace: svc.Namespace,
+					IP:        pod.IP,
+				})
+			}
+		}
+		return res
+	}, krtlite.WithName("SimpleEndpoints"))
 }
 
 func ListSorted[T any](c krtlite.Collection[T]) []T {

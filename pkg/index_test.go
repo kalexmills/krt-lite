@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	client_corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 func TestIndex(t *testing.T) {
@@ -20,17 +20,17 @@ func TestIndex(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		makeIndex func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap]
+		makeIndex func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap]
 	}{
 		{
 			name: "Informer",
-			makeIndex: func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
+			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				return krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
 			},
 		},
 		{
 			name: "Map",
-			makeIndex: func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
+			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
 				return krtlite.Map[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) **corev1.ConfigMap {
 					return &cm
@@ -39,7 +39,7 @@ func TestIndex(t *testing.T) {
 		},
 		{
 			name: "FlatMap", // include both Map + FlatMap in case implementations later change
-			makeIndex: func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
+			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
 				return krtlite.FlatMap[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) []*corev1.ConfigMap {
 					return []*corev1.ConfigMap{cm}
