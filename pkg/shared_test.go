@@ -36,6 +36,7 @@ func NewSimplePod(name, namespace, ip string, labels map[string]string) SimplePo
 	}
 }
 
+// SimplePodCollection is a collection of pods with PodIPs.
 func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SimplePod] {
 	return krtlite.Map(pods, func(i *corev1.Pod) *SimplePod {
 		if i.Status.PodIP == "" {
@@ -46,7 +47,7 @@ func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collectio
 			Labeled: NewLabeled(i.Labels),
 			IP:      i.Status.PodIP,
 		}
-	})
+	}, krtlite.WithName("SimplePods"))
 }
 
 type Image string
@@ -64,7 +65,7 @@ func SimpleImageCollectionFromJobs(jobs krtlite.Collection[*batchv1.Job]) krtlit
 			}
 		}
 		return result
-	})
+	}, krtlite.WithName("ImagesFromJobs"))
 }
 
 func SimpleImageCollectionFromPods(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[Image] {
@@ -76,7 +77,7 @@ func SimpleImageCollectionFromPods(pods krtlite.Collection[*corev1.Pod]) krtlite
 			}
 		}
 		return result
-	})
+	}, krtlite.WithName("ImagesFromPods"))
 }
 
 type SimpleNamespace struct {
@@ -101,7 +102,7 @@ func SimpleNamespaceCollection(pods krtlite.Collection[*corev1.Namespace]) krtli
 			Named:   NewNamed(i),
 			Labeled: NewLabeled(i.Labels),
 		}
-	})
+	}, krtlite.WithName("SimpleNamespaces"))
 }
 
 func ListSorted[T any](c krtlite.Collection[T]) []T {

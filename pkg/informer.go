@@ -16,18 +16,24 @@ import (
 
 const keyIdx = "namespace/name"
 
-func indexByNamespaceName(in any) ([]string, error) {
-	obj, err := meta.Accessor(in)
-	if err != nil {
-		return []string{""}, errors.New("object has no meta")
-	}
-	key := fmt.Sprintf("%s/%s", obj.GetNamespace(), obj.GetName())
-	return []string{key}, nil
+// NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
+// that if O denotes a runtime.Object, then TL denotes the corresponding list object. For example, if O is *corev1.Pods,
+// TL must be *corev1.PodList.
+func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectorOption) IndexableCollection[T] {
+	return NewInformerFromListerWatcher[T](&cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return c.List(ctx, opts)
+		},
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			return c.Watch(ctx, opts)
+		},
+	}, opts...)
 }
 
-// NewInformerFromListerWatcher creates a new collection from the provided client
-func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) IndexableCollection[T] {
+// NewInformerFromListerWatcher creates a new collection from the provided cache.ListerWatcher.
+func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, opts ...CollectorOption) IndexableCollection[T] {
 	i := informer[T]{
+		collectorMeta: newCollectorMeta(opts),
 		inf: cache.NewSharedIndexInformer(
 			lw,
 			zero[T](),
@@ -44,13 +50,14 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher) In
 		close(i.synced)
 	}()
 
-	go i.inf.Run(i.stop) // stuck on waiting
+	go i.inf.Run(i.stop)
 
 	return &i
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
 type informer[T runtime.Object] struct {
+	collectorMeta
 	inf    cache.SharedIndexInformer
 	stop   chan struct{}
 	synced chan struct{}
@@ -88,7 +95,7 @@ func (i *informer[T]) Register(f func(ev Event[T])) cache.ResourceEventHandlerRe
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	reg, err := i.inf.AddEventHandler(eventHandler[T]{ // TODO: use this registration
+	reg, err := i.inf.AddEventHandler(eventHandler[T]{
 		handler: func(ev Event[T], syncing bool) {
 			f([]Event[T]{ev})
 		},
@@ -153,7 +160,18 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer()}
 }
 
+func indexByNamespaceName(in any) ([]string, error) {
+	obj, err := meta.Accessor(in)
+	if err != nil {
+		return []string{""}, errors.New("object has no meta")
+	}
+	key := fmt.Sprintf("%s/%s", obj.GetNamespace(), obj.GetName())
+	return []string{key}, nil
+}
+
 type informerIndexer[T any] struct {
+	parentName string
+
 	idxKey string
 	inf    cache.Indexer
 }
@@ -161,7 +179,7 @@ type informerIndexer[T any] struct {
 func (i *informerIndexer[T]) Lookup(key string) []T {
 	res, err := i.inf.ByIndex(i.idxKey, key)
 	if err != nil {
-		slog.Info("indexer failed to perform key lookup", "key", key)
+		slog.Info("indexer failed to perform key lookup", "key", key, "parentName", i.parentName, "err", err)
 	}
 	var result []T
 	for _, obj := range res {
@@ -229,18 +247,4 @@ func extract[T runtime.Object](obj any) *T {
 type TypedClient[TL runtime.Object] interface {
 	List(ctx context.Context, opts metav1.ListOptions) (TL, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-}
-
-// NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
-// that if O denotes a runtime.Object, then TL denotes the corresponding list object. For example, if O is *corev1.Pods,
-// TL must be *corev1.PodList.
-func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL]) IndexableCollection[T] {
-	return NewInformerFromListerWatcher[T](&cache.ListWatch{
-		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
-			return c.List(ctx, opts)
-		},
-		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			return c.Watch(ctx, opts)
-		},
-	})
 }

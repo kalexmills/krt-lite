@@ -6,22 +6,32 @@ import (
 	"sync/atomic"
 )
 
+// NewSingleton creates an returns a new Singleton.
+func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectorOption) Singleton[T] {
+	result := newSingleton[T](opts)
+	result.Set(initial)
+	if startSynced {
+		result.MarkSynced()
+	}
+	return result
+}
+
 type singleton[T any] struct {
+	collectorMeta
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
-	id      uint64
 	currKey string
 
 	mut      *sync.RWMutex
 	handlers []func(o []Event[T])
 }
 
-func newSingleton[T any]() *singleton[T] {
+func newSingleton[T any](opts []CollectorOption) *singleton[T] {
 	return &singleton[T]{
-		val:    atomic.Pointer[T]{},
-		synced: atomic.Bool{},
-		id:     nextUID(),
-		mut:    new(sync.RWMutex),
+		collectorMeta: newCollectorMeta(opts),
+		val:           atomic.Pointer[T]{},
+		synced:        atomic.Bool{},
+		mut:           new(sync.RWMutex),
 	}
 }
 

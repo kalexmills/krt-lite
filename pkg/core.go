@@ -2,11 +2,9 @@ package pkg
 
 import (
 	"fmt"
-	"github.com/kalexmills/krt-plusplus/pkg/fifo"
 	"iter"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
-	"sync"
 	"sync/atomic"
 )
 
@@ -57,6 +55,8 @@ type Collection[T any] interface {
 	GetKey(key string) *T
 
 	List() []T
+
+	getName() string
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -66,19 +66,28 @@ type Singleton[T any] interface {
 	Set(*T)
 }
 
+type collectorMeta struct {
+	uid  uint64
+	name string
+}
+
+func (c collectorMeta) getName() string {
+	return c.name
+}
+
+func newCollectorMeta(options []CollectorOption) collectorMeta {
+	meta := &collectorMeta{uid: nextUID()}
+	for _, option := range options {
+		option(meta)
+	}
+	return *meta
+}
+
+type CollectorOption func(m *collectorMeta)
+
 // An Index allows subsets of items in a collection to
 type Index[T any] interface {
 	Lookup(key string) []T
-}
-
-// NewSingleton creates an returns a new Singleton.
-func NewSingleton[T any](initial *T, startSynced bool) Singleton[T] {
-	result := newSingleton[T]()
-	result.Set(initial)
-	if startSynced {
-		result.MarkSynced()
-	}
-	return result
 }
 
 type EventType int
@@ -126,65 +135,6 @@ type HandlerContext interface { // TODO: will we use this?
 }
 
 type key[O any] string
-
-// Map creates a new collection by mapping each I into an O.
-//
-// Panics will occur if an unsupported type for I or O are used, see GetKey for details.
-func Map[I, O any](c Collection[I], f Mapper[I, O]) IndexableCollection[O] {
-	ff := func(i I) []O {
-		res := f(i)
-		if res == nil {
-			return nil
-		}
-		return []O{*res}
-	}
-	return FlatMap(c, ff)
-}
-
-// FlatMap creates a new collection by mapping every I into zero or more O.
-//
-// Panics will occur if an unsupported type of I or O are used, see GetKey for details.
-func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O]) IndexableCollection[O] {
-	result := &derivedCollection[I, O]{
-		parent:      c,
-		uid:         nextUID(),
-		transformer: f,
-
-		outputs:  make(map[key[O]]O),
-		inputs:   make(map[key[I]]I),
-		mappings: make(map[key[I]]map[key[O]]struct{}),
-		mut:      &sync.RWMutex{},
-		idxMut:   &sync.RWMutex{},
-
-		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
-
-		stop:       make(chan struct{}),
-		markSynced: &sync.Once{},
-		inputQueue: fifo.NewQueue[any](1024),
-
-		syncedCh: make(chan struct{}),
-	}
-	result.syncer = &multiSyncer{
-		syncers: []cache.InformerSynced{
-			c.HasSynced,
-			channelSyncer{synced: result.syncedCh}.HasSynced,
-		}}
-
-	go result.run()
-
-	return result
-}
-
-// Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
-// Joiner. Joiner will always be called with at least two inputs.
-func Join[T any](cs []Collection[T], j Joiner[T]) IndexableCollection[T] {
-	return newJoinedCollection(cs, j)
-}
-
-// JoinDisjoint joins together a slice of collections whose keys do not overlap.
-func JoinDisjoint[T any](cs []Collection[T]) IndexableCollection[T] {
-	return newJoinedCollection(cs, nil)
-}
 
 var globalUIDCounter = atomic.Uint64{}
 

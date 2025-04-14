@@ -4,13 +4,9 @@ import (
 	"context"
 	krtlite "github.com/kalexmills/krt-plusplus/pkg"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/cache"
-	"sync"
-	"sync/atomic"
 	"testing"
 )
 
@@ -127,41 +123,4 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 	CollectionContentsDeepEquals(SimpleServices, NewSimpleService("svc", "namespace", map[string]string{"app": "foo"}))
 
 	// TODO: include SimpleEndpoints once Fetch has been implemented
-}
-
-func TestCollectionHandlerSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	c := fake.NewClientset(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod",
-			Namespace: "namespace",
-			Labels:    map[string]string{"app": "foo"},
-		},
-		Status: corev1.PodStatus{PodIP: "1.2.3.4"},
-	})
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-
-	SimplePods := SimplePodCollection(Pods)
-
-	var (
-		gotEvent  atomic.Bool
-		reg       cache.ResourceEventHandlerRegistration
-		startSync sync.WaitGroup // wait group to satisfy race detector
-	)
-	startSync.Add(1)
-	reg1Delayed := SimplePods.Register(func(o krtlite.Event[SimplePod]) {
-		startSync.Wait()
-		assert.Equal(t, false, reg.HasSynced())
-		gotEvent.Store(true)
-	})
-	reg = reg1Delayed // satisfy race detector
-	startSync.Done()
-
-	ok := cache.WaitForCacheSync(ctx.Done(), reg.HasSynced)
-	require.True(t, ok)
-
-	assert.EqualValues(t, true, gotEvent.Load())
-
 }

@@ -2,14 +2,13 @@ package pkg_test
 
 import (
 	"context"
-	"sync/atomic"
-
 	krtlite "github.com/kalexmills/krt-plusplus/pkg"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"sync/atomic"
 	"testing"
 )
 
@@ -57,15 +56,18 @@ func TestJoin(t *testing.T) {
 	podClient := c.CoreV1().Pods("namespace")
 	jobClient := c.BatchV1().Jobs("namespace")
 
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs("namespace"))
+	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
+		krtlite.WithName("Pods"))
+	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs("namespace"),
+		krtlite.WithName("Jobs"))
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 
 	joiner := func(vals []Image) Image {
 		return vals[0]
 	}
-	Images := krtlite.Join[Image]([]krtlite.Collection[Image]{PodImages, JobImages}, joiner)
+	Images := krtlite.Join[Image]([]krtlite.Collection[Image]{PodImages, JobImages}, joiner,
+		krtlite.WithName("Images"))
 
 	PodImages.WaitUntilSynced(ctx.Done())
 	JobImages.WaitUntilSynced(ctx.Done())
@@ -167,7 +169,7 @@ func TestJoin(t *testing.T) {
 		"expected joinedCollection collection to contain all containers")
 }
 
-func TestCollectionJoinSync(t *testing.T) {
+func TestCollectionJoinDisjointSync(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -201,6 +203,42 @@ func TestCollectionJoinSync(t *testing.T) {
 	assert.True(t, CollectionKeysMatch(AllImages, "cilium:latest", "nikola/netshoot:latest")())
 }
 
+func TestCollectionJoinSync(t *testing.T) { // TODO: dedup with above test.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	c := fake.NewClientset(
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "name",
+				Namespace: "namespace",
+			},
+			Spec: PodSpecWithImages("cilium:latest"),
+		},
+		&batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "name",
+				Namespace: "namespace",
+			},
+			Spec: batchv1.JobSpec{
+				Template: PodTemplateSpecWithImages("cilium:latest"),
+			},
+		},
+	)
+
+	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
+	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
+	PodImages := SimpleImageCollectionFromPods(Pods)
+	JobImages := SimpleImageCollectionFromJobs(Jobs)
+
+	AllImages := krtlite.Join([]krtlite.Collection[Image]{PodImages, JobImages}, func(ts []Image) Image {
+		return ts[0]
+	})
+
+	assert.True(t, AllImages.WaitUntilSynced(ctx.Done()))
+	assert.True(t, CollectionKeysMatch(AllImages, "cilium:latest")())
+}
+
 func TestJoinJoiner(t *testing.T) {
 	c1 := krtlite.NewSingleton[Named](nil, true)
 	c2 := krtlite.NewSingleton[Named](nil, true)
@@ -208,14 +246,14 @@ func TestJoinJoiner(t *testing.T) {
 
 	j := krtlite.Join[Named]([]krtlite.Collection[Named]{c1, c2, c3},
 		func(ts []Named) Named {
-			var result string
+			var result string // concatenate names of matching keys, using / as a delimiter.
 			for i, t := range ts {
 				if i != 0 {
 					result += "/"
 				}
 				result += t.Name
 			}
-			return Named{Name: result}
+			return Named{Name: result} // TODO: stick concatenated keys into the namespace, so keys don't change in the output
 		},
 	)
 
@@ -231,5 +269,3 @@ func TestJoinJoiner(t *testing.T) {
 	AssertEventually(t, CollectionKeysMatch(j, "abc/abc/abc"))
 	assert.Equal(t, "abc/abc/abc", j.GetKey("abc").Name)
 }
-
-// TODO: write a test for registration sync.

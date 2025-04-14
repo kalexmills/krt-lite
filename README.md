@@ -20,6 +20,11 @@ Writing Kubernetes controllers is easier when you can:
 - [X] Joiner -- joining collections into one.
 - [X] StaticCollection -- collections that don't change
 - [ ] Indexer -- indexing an existing collection for quicker lookup.
-- [ ] Fetch -- fetching from a collection and tracking dependencies.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
+  - [ ] Collection names (very needed for debugging)
+- [ ] Fetch -- fetching from a collection and tracking dependencies.
+
 - [ ] Pluggable logging via slog.
+
+## Known Issues
+- cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed

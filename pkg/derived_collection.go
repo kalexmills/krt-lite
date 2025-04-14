@@ -9,10 +9,34 @@ import (
 	"sync"
 )
 
+// Map creates a new collection by mapping each I into an O.
+//
+// Panics will occur if an unsupported type for I or O are used, see GetKey for details.
+func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectorOption) IndexableCollection[O] {
+	ff := func(i I) []O {
+		res := f(i)
+		if res == nil {
+			return nil
+		}
+		return []O{*res}
+	}
+	return FlatMap(c, ff, opts...)
+}
+
+// FlatMap creates a new collection by mapping every I into zero or more O.
+//
+// Panics will occur if an unsupported type of I or O are used, see GetKey for details.
+func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectorOption) IndexableCollection[O] {
+	res := newDerivedCollection(c, f, opts)
+	go res.run()
+	return res
+}
+
 // derivedCollection implements a collection whose contents are computed based on the contents of other collections.
 // Dependencies between collections are tracked to ensure updates are propagated properly.
 type derivedCollection[I, O any] struct {
-	uid    uint64
+	collectorMeta
+
 	parent Collection[I]
 
 	transformer FlatMapper[I, O]
@@ -25,6 +49,7 @@ type derivedCollection[I, O any] struct {
 	idxMut  *sync.RWMutex // idxMut protects indices.
 	indices []*mapIndex[O]
 
+	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 
 	stop      chan struct{}
@@ -34,7 +59,36 @@ type derivedCollection[I, O any] struct {
 	syncedCh   chan struct{}
 	syncer     *multiSyncer
 
-	inputQueue *fifo.Queue[any] // entries will always be either eventParentIsSynced or []Event[I]
+	inputQueue *fifo.Queue[any] // inputQueue entries will always be either eventParentIsSynced or []Event[I]
+}
+
+func newDerivedCollection[I, O any](c Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
+	result := &derivedCollection[I, O]{
+		collectorMeta: newCollectorMeta(opts),
+		parent:        c,
+		transformer:   f,
+
+		outputs:  make(map[key[O]]O),
+		inputs:   make(map[key[I]]I),
+		mappings: make(map[key[I]]map[key[O]]struct{}),
+		mut:      &sync.RWMutex{},
+		idxMut:   &sync.RWMutex{},
+
+		regHandlerMut:      &sync.RWMutex{},
+		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
+
+		markSynced: &sync.Once{},
+		stop:       make(chan struct{}),
+		inputQueue: fifo.NewQueue[any](1024),
+
+		syncedCh: make(chan struct{}),
+	}
+	result.syncer = &multiSyncer{
+		syncers: []cache.InformerSynced{
+			c.HasSynced,
+			channelSyncer{synced: result.syncedCh}.HasSynced,
+		}}
+	return result
 }
 
 var _ Collection[any] = &derivedCollection[int, any]{}
@@ -50,14 +104,17 @@ func (c *derivedCollection[I, O]) run() {
 		return // TODO: a noisy error
 	}
 
+	slog.Info("parent has synced", "name", c.name, "parentName", c.parent.getName())
 	go c.inputQueue.Run(c.stop)
-	c.inputQueue.In() <- eventParentIsSynced{}
 
 	c.processInputQueue()
 }
 
 func (c *derivedCollection[I, O]) pushInputEvents(events []Event[I]) {
 	c.inputQueue.In() <- events
+	c.markSynced.Do(func() {
+		c.inputQueue.In() <- eventParentIsSynced{}
+	})
 }
 
 func (c *derivedCollection[I, O]) processInputQueue() {
@@ -67,10 +124,8 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 			return
 		case input := <-c.inputQueue.Out():
 			if _, ok := input.(eventParentIsSynced); ok {
-				c.markSynced.Do(func() {
-					close(c.syncedCh)
-					slog.Info("collection synced")
-				})
+				close(c.syncedCh)
+				slog.Info("collection synced", "name", c.name)
 				continue
 			}
 			events := input.([]Event[I])
@@ -83,7 +138,8 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 // on any changes to the current state of the collection.
 func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	var outputEvents []Event[O]
-	c.mut.Lock() // stuck on lock!!!!!!!!
+
+	c.mut.Lock()
 	defer c.mut.Unlock()
 
 	recomputed := make([]map[key[O]]O, len(inputs))
@@ -138,9 +194,9 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 
 				ev := Event[O]{}
 				if newOK && oldOK {
-					// TODO: test equivalence of old and new and skip updates.
-					//     (hopefully w/out reflect.DeepEquals).
-
+					//if reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
+					//	continue
+					//}
 					ev.Event = EventUpdate
 					ev.New = &newRes
 					ev.Old = &oldRes
@@ -158,20 +214,22 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 			}
 		}
 	}
-	if len(outputEvents) == 0 {
-		return
-	}
 
+	// note; we still hold the lock, which guarantees events are distributed in order.
 	c.distributeEvents(outputEvents, !c.HasSynced())
 }
 
 // distributeEvents sends the provided events to all downstream listeners.
 func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSync bool) {
 	// update indexes before handlers, so handlers can rely on indexes being computed.
+	c.idxMut.RLock()
 	for _, idx := range c.indices {
 		idx.handleEvents(events)
 	}
+	c.idxMut.RUnlock()
 
+	c.regHandlerMut.RLock()
+	defer c.regHandlerMut.RUnlock()
 	for h := range c.registeredHandlers {
 		h.send(events, initialSync)
 	}
@@ -202,8 +260,10 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) cache.ResourceEve
 }
 
 func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) cache.ResourceEventHandlerRegistration {
-	p := c.newRegistrationHandler(f)
+	p := newRegistrationHandler(c, f)
 
+	c.regHandlerMut.Lock()
+	defer c.regHandlerMut.Unlock()
 	c.registeredHandlers[p] = struct{}{}
 
 	if !runExistingState {
@@ -214,16 +274,15 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 
 	go func() {
 		c.WaitUntilSynced(c.stop) // wait for parent to sync before snapshotting and sending initial state
-		p.send(c.snapshotOutput(), true)
+		p.send(c.snapshotInitialState(), true)
 	}()
 
 	go p.run()
-	go p.queue.Run(p.stopCh)
 
 	return p
 }
 
-func (c *derivedCollection[I, O]) snapshotOutput() []Event[O] {
+func (c *derivedCollection[I, O]) snapshotInitialState() []Event[O] {
 	c.mut.RLock()
 	defer c.mut.RUnlock()
 
@@ -263,17 +322,18 @@ func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
 }
 
 // newRegistrationHandler returns a registration handler, starting up the internal inputQueue.
-func (c *derivedCollection[I, O]) newRegistrationHandler(f func(o []Event[O])) *registrationHandler[Event[O]] {
+func newRegistrationHandler[O any](parent Collection[O], f func(o []Event[O])) *registrationHandler[Event[O]] {
 	h := &registrationHandler[Event[O]]{
-		handler:           f,
-		queue:             fifo.NewQueue[any](1024),
-		stopCh:            make(chan struct{}),
-		syncedCh:          make(chan struct{}),
-		closeSyncedChOnce: &sync.Once{},
+		parentName:     parent.getName(),
+		handler:        f,
+		queue:          fifo.NewQueue[any](1024),
+		stopCh:         make(chan struct{}),
+		syncedCh:       make(chan struct{}),
+		sendSyncedOnce: &sync.Once{},
 	}
 	h.syncer = &multiSyncer{
 		syncers: []cache.InformerSynced{
-			c.HasSynced,
+			parent.HasSynced,
 			channelSyncer{synced: h.syncedCh}.HasSynced,
 		},
 	}
@@ -286,21 +346,22 @@ type eventParentIsSynced struct{}
 
 // registrationHandler handles a fifo.Queue of batched output events which are being sent to a registered component.
 type registrationHandler[T any] struct {
+	parentName string
+
 	handler func(o []T)
 	// each entry will be either []Event[O] or eventParentIsSynced{}
 	queue *fifo.Queue[any]
 
 	stopCh chan struct{}
 
-	syncedCh          chan struct{}
-	closeSyncedChOnce *sync.Once
-	syncer            *multiSyncer
+	sendSyncedOnce *sync.Once
+	syncedCh       chan struct{}
+	syncer         *multiSyncer
 }
 
 func (p *registrationHandler[T]) markSynced() {
-	p.closeSyncedChOnce.Do(func() {
-		close(p.syncedCh)
-	})
+	slog.Info("registration handler has synced", "parentName", p.parentName)
+	close(p.syncedCh)
 }
 
 // HasSynced is true when the registrationHandler is synced.
@@ -309,6 +370,7 @@ func (p *registrationHandler[T]) HasSynced() bool {
 }
 
 func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
+	slog.Info("receiving events", "events", os, "parentName", p.parentName, "isInInitialList", isInInitialList)
 	select {
 	case <-p.stopCh:
 		return
@@ -316,14 +378,24 @@ func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
 	}
 	if isInInitialList {
 		select {
-		case <-p.stopCh:
+		case <-p.syncedCh:
+			slog.Info("regHandler: already synced", "parentName", p.parentName)
 			return
-		case p.queue.In() <- eventParentIsSynced{}:
+		default:
+			//p.sendSyncedOnce.Do(func() { // TODO: send sync event, but only once?
+			select {
+			case <-p.stopCh:
+				return
+			case p.queue.In() <- eventParentIsSynced{}:
+				slog.Info("regHandler: sending parent is synced", "parentName", p.parentName)
+			}
+			//})
 		}
 	}
 }
 
 func (p *registrationHandler[O]) run() {
+	go p.queue.Run(p.stopCh)
 	for {
 		select {
 		case <-p.stopCh:
