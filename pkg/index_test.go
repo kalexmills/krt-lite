@@ -32,7 +32,7 @@ func TestIndex(t *testing.T) {
 			name: "Map",
 			makeIndex: func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
-				return krtlite.Map[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(cm *corev1.ConfigMap) **corev1.ConfigMap {
+				return krtlite.Map[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) **corev1.ConfigMap {
 					return &cm
 				})
 			},
@@ -41,7 +41,7 @@ func TestIndex(t *testing.T) {
 			name: "FlatMap", // include both Map + FlatMap in case implementations later change
 			makeIndex: func(c client_corev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
-				return krtlite.FlatMap[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(cm *corev1.ConfigMap) []*corev1.ConfigMap {
+				return krtlite.FlatMap[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) []*corev1.ConfigMap {
 					return []*corev1.ConfigMap{cm}
 				})
 			},
@@ -73,10 +73,10 @@ func TestIndex(t *testing.T) {
 			}
 			cmC := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "c",
+					Name:      "collection",
 					Namespace: "ns",
 				},
-				Data: map[string]string{"shared-bc": "data-c"},
+				Data: map[string]string{"shared-bc": "data-collection"},
 			}
 
 			ConfigMaps := tt.makeIndex(c.CoreV1().ConfigMaps("ns"))

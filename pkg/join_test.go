@@ -203,7 +203,7 @@ func TestCollectionJoinDisjointSync(t *testing.T) {
 	assert.True(t, CollectionKeysMatch(AllImages, "cilium:latest", "nikola/netshoot:latest")())
 }
 
-func TestCollectionJoinSync(t *testing.T) { // TODO: dedup with above test.
+func TestCollectionJoinSync(t *testing.T) { // TODO: dedup with TestCollectionJoinDisjointSync.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

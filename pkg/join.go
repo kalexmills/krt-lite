@@ -176,8 +176,7 @@ func (j *joinedCollection[O]) distributeEvents(events []Event[O], isInInitialLis
 	defer j.regHandlerMut.RUnlock()
 }
 
-// getInputMap fetches and lazily initializes the output map associated with the provided key. Must only be called while
-// inMut is held
+// getInputMap fetches and lazily initializes the output map associated with the provided key. Caller must hold inMut.
 func (j *joinedCollection[O]) getInputMap(key string) map[int]O {
 	if result, ok := j.inputs[key]; ok {
 		return result

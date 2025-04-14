@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	timeout      = time.Second * 3       // timeout is used for all Eventually and context.WithTimeout calls.
+	timeout      = time.Second * 3       // timeout is used for all Eventually and kontext.WithTimeout calls.
 	pollInterval = 50 * time.Millisecond // poll interval is used for all Eventually
 )
 
@@ -38,7 +38,7 @@ func NewSimplePod(name, namespace, ip string, labels map[string]string) SimplePo
 
 // SimplePodCollection is a collection of pods with PodIPs.
 func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SimplePod] {
-	return krtlite.Map(pods, func(i *corev1.Pod) *SimplePod {
+	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Pod) *SimplePod {
 		if i.Status.PodIP == "" {
 			return nil
 		}
@@ -57,7 +57,7 @@ func (i Image) ResourceName() string {
 }
 
 func SimpleImageCollectionFromJobs(jobs krtlite.Collection[*batchv1.Job]) krtlite.Collection[Image] {
-	return krtlite.FlatMap(jobs, func(job *batchv1.Job) []Image {
+	return krtlite.FlatMap(jobs, func(ctx krtlite.Context, job *batchv1.Job) []Image {
 		var result []Image
 		for _, c := range job.Spec.Template.Spec.Containers {
 			if c.Image != "" {
@@ -69,7 +69,7 @@ func SimpleImageCollectionFromJobs(jobs krtlite.Collection[*batchv1.Job]) krtlit
 }
 
 func SimpleImageCollectionFromPods(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[Image] {
-	return krtlite.FlatMap(pods, func(pod *corev1.Pod) []Image {
+	return krtlite.FlatMap(pods, func(ctx krtlite.Context, pod *corev1.Pod) []Image {
 		var result []Image
 		for _, c := range pod.Spec.Containers {
 			if c.Image != "" {
@@ -97,7 +97,7 @@ func (n SimpleNamespace) ResourceName() string {
 }
 
 func SimpleNamespaceCollection(pods krtlite.Collection[*corev1.Namespace]) krtlite.Collection[SimpleNamespace] {
-	return krtlite.Map(pods, func(i *corev1.Namespace) *SimpleNamespace {
+	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Namespace) *SimpleNamespace {
 		return &SimpleNamespace{
 			Named:   NewNamed(i),
 			Labeled: NewLabeled(i.Labels),

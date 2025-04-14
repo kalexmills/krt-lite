@@ -10,15 +10,12 @@ import (
 
 type (
 	// A Mapper maps an I to zero or one O.
-	Mapper[I, O any] func(i I) *O
+	Mapper[I, O any] func(ctx Context, i I) *O
 
 	// A FlatMapper maps an I to many O.
-	FlatMapper[I, O any] func(i I) []O
+	FlatMapper[I, O any] func(ctx Context, i I) []O
 
-	// A FlatSplitter maps an I into many O1 and many O2.
-	FlatSplitter[I, O1, O2 any] func(i I) ([]O1, []O2)
-
-	// A Joiner joins two or more O into one.
+	// A Joiner joins two or more O into one. Must be a pure function.
 	Joiner[T any] func(ts []T) T
 
 	// A KeyExtractor is used to extract mapIndex keys from an object.
@@ -35,9 +32,10 @@ type EventStream[T any] interface {
 	HasSynced() bool
 }
 
-type IndexableCollection[T any] interface { // TODO: get rid of this and panic if Index is not supported
+type IndexableCollection[T any] interface {
 	Collection[T]
 
+	// Index returns an index built using the provided KeyExtractor.
 	Index(extractor KeyExtractor[T]) Index[T]
 }
 
@@ -48,7 +46,7 @@ type ComparableObject interface {
 	comparable
 }
 
-// Collection is a collection of objects that can change over time, and can be subscribed to.
+// Collection is a collection of objects whose changes can be subscribed to.
 type Collection[T any] interface {
 	EventStream[T]
 
@@ -57,6 +55,8 @@ type Collection[T any] interface {
 	List() []T
 
 	getName() string
+
+	getUID() uint64
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -76,6 +76,10 @@ func (c collectorMeta) getName() string {
 	return c.name
 }
 
+func (c collectorMeta) getUID() uint64 {
+	return c.uid
+}
+
 func newCollectorMeta(options []CollectorOption) collectorMeta {
 	meta := &collectorMeta{uid: nextUID()}
 	for _, option := range options {
@@ -86,7 +90,7 @@ func newCollectorMeta(options []CollectorOption) collectorMeta {
 
 type CollectorOption func(m *collectorMeta)
 
-// An Index allows subsets of items in a collection to
+// An Index allows subsets of items in a collection to be indexed.
 type Index[T any] interface {
 	Lookup(key string) []T
 }
@@ -126,6 +130,17 @@ func (e Event[T]) Latest() T {
 		return *e.Old
 	}
 	return *e.New
+}
+
+func (e Event[T]) Items() []T {
+	res := make([]T, 0, 2)
+	if e.Old != nil {
+		res = append(res, *e.Old)
+	}
+	if e.New != nil {
+		res = append(res, *e.New)
+	}
+	return res
 }
 
 type HandlerContext interface { // TODO: will we use this?

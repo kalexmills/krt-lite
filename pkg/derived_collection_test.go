@@ -23,7 +23,7 @@ func NewSimpleService(name, namespace string, selector map[string]string) Simple
 }
 
 func SimpleServiceCollection(services krtlite.Collection[*corev1.Service]) krtlite.Collection[SimpleService] {
-	return krtlite.Map(services, func(i *corev1.Service) *SimpleService {
+	return krtlite.Map(services, func(ctx krtlite.Context, i *corev1.Service) *SimpleService {
 		return &SimpleService{
 			Named:    NewNamed(i),
 			Selector: i.Spec.Selector,

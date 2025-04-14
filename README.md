@@ -2,7 +2,6 @@
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/kalexmills/krt-lite)
 ![GitHub License](https://img.shields.io/github/license/kalexmills/krt-lite)
 
-
 # krt-lite
 
 istio/krt, without Istio.
@@ -23,8 +22,7 @@ Writing Kubernetes controllers is easier when you can:
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
   - [X] Collection names (very needed for debugging)
-
 - [ ] Pluggable logging via slog, and tests.
 
 ## Known Issues
-- [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere.
+- [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere (in Informer, if possible).
