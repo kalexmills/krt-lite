@@ -20,6 +20,7 @@ Writing Kubernetes controllers is easier when you can:
 - [X] StaticCollection -- collections that don't change
 - [X] Indexer -- indexing an existing collection for quicker lookup.
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
+- [ ] Filtering -- Filtering collections and on fetch.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
   - [X] Collection names (very needed for debugging)
 - [ ] Pluggable logging via slog, and tests.

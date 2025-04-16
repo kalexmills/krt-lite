@@ -68,11 +68,11 @@ func TestNewInformer(t *testing.T) {
 
 	tt2 := NewTracker[*corev1.ConfigMap](t)
 	ConfigMaps.Register(tt2.Track)
-	tt.Wait("add/ns/a", "add/ns/b")
+	tt2.Wait("add/ns/a", "add/ns/b")
 
 	err = c.CoreV1().ConfigMaps("ns").Delete(ctx, cmB.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
-	tt.Wait("delete/ns/b")
+	tt2.Wait("delete/ns/b")
 }
 
 func TestInformerSync(t *testing.T) {

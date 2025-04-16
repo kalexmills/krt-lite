@@ -4,6 +4,7 @@ import (
 	"github.com/kalexmills/krt-plusplus/pkg/fifo"
 	"k8s.io/utils/ptr"
 	"maps"
+	"reflect"
 	"slices"
 	"sync"
 )
@@ -287,9 +288,9 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 
 				ev := Event[O]{}
 				if newOK && oldOK {
-					//if reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
-					//	continue
-					//}
+					if reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
+						continue
+					}
 					ev.Event = EventUpdate
 					ev.New = &newRes
 					ev.Old = &oldRes

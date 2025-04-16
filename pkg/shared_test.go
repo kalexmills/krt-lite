@@ -135,6 +135,24 @@ func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtl
 	}, krtlite.WithName("SimpleEndpoints"))
 }
 
+type SizedPod struct {
+	Named
+	Size string
+}
+
+func SizedPodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SizedPod] {
+	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Pod) *SizedPod {
+		s, f := i.Labels["size"]
+		if !f {
+			return nil
+		}
+		return &SizedPod{
+			Named: NewNamed(i),
+			Size:  s,
+		}
+	}, krtlite.WithName("SizedPods"))
+}
+
 func ListSorted[T any](c krtlite.Collection[T]) []T {
 	result := c.List()
 	slices.SortFunc(result, func(a, b T) int {
@@ -165,14 +183,28 @@ func (t *tracker[T]) Track(e krtlite.Event[T]) {
 	t.events[key] = struct{}{}
 }
 
+func (t *tracker[T]) Empty() {
+	t.t.Helper()
+	t.mut.RLock()
+	defer t.mut.RUnlock()
+	assert.Empty(t.t, t.events)
+}
+
+// Wait waits for events to have occurred, no order is asserted.
 func (t *tracker[T]) Wait(events ...string) {
+	t.t.Helper()
 	assert.Eventually(t.t, func() bool {
-		t.mut.RLock()
-		defer t.mut.RUnlock()
+		t.mut.Lock()
+		defer t.mut.Unlock()
 		for _, ev := range events {
 			if _, ok := t.events[ev]; !ok {
 				return false
 			}
+		}
+
+		// consume events once all have been verified
+		for _, ev := range events {
+			delete(t.events, ev)
 		}
 		return true
 	}, timeout, pollInterval)
