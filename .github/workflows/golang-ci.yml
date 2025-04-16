@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.golang-version }}
+          cache-dependency-path: "go.sum"
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -39,5 +40,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.golang-version }}
+          cache-dependency-path: "go.sum"
       - name: Run tests
         run: make test
