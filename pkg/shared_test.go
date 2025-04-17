@@ -207,7 +207,7 @@ func (t *tracker[T]) Wait(events ...string) {
 			delete(t.events, ev)
 		}
 		return true
-	}, timeout, pollInterval)
+	}, timeout, pollInterval, "expected events: %v", events)
 }
 
 type Named struct {

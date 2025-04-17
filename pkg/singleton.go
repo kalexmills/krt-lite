@@ -17,7 +17,7 @@ func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectorOption) 
 }
 
 type singleton[T any] struct {
-	collectionMeta
+	collectionShared
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
 	currKey string
@@ -28,10 +28,10 @@ type singleton[T any] struct {
 
 func newSingleton[T any](opts []CollectorOption) *singleton[T] {
 	return &singleton[T]{
-		collectionMeta: newCollectorMeta(opts),
-		val:            atomic.Pointer[T]{},
-		synced:         atomic.Bool{},
-		mut:            new(sync.RWMutex),
+		collectionShared: newCollectionShared(opts),
+		val:              atomic.Pointer[T]{},
+		synced:           atomic.Bool{},
+		mut:              new(sync.RWMutex),
 	}
 }
 

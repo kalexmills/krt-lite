@@ -22,7 +22,7 @@ func TestNewInformer(t *testing.T) {
 	c := fake.NewClientset()
 	cmClient := c.CoreV1().ConfigMaps("ns")
 
-	ConfigMaps := krtlite.NewInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
 
 	tt := NewTracker[*corev1.ConfigMap](t)
 	ConfigMaps.Register(tt.Track)
@@ -86,7 +86,7 @@ func TestInformerSync(t *testing.T) {
 		},
 	})
 
-	ConfigMaps := krtlite.NewInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
 
 	var (
 		gotEvent  atomic.Bool

@@ -35,7 +35,7 @@ func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectorOpt
 // derivedCollection implements a collection whose contents are computed based on the contents of other collections.
 // Dependencies between collections are tracked to ensure updates are propagated properly.
 type derivedCollection[I, O any] struct {
-	collectionMeta
+	collectionShared
 
 	parent Collection[I]
 
@@ -52,7 +52,6 @@ type derivedCollection[I, O any] struct {
 	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 
-	stop      chan struct{}
 	parentReg Syncer
 
 	markSynced *sync.Once
@@ -68,9 +67,9 @@ type derivedCollection[I, O any] struct {
 
 func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
 	c := &derivedCollection[I, O]{
-		collectionMeta: newCollectorMeta(opts),
-		parent:         parent,
-		transformer:    f,
+		collectionShared: newCollectionShared(opts),
+		parent:           parent,
+		transformer:      f,
 
 		outputs:  make(map[key[O]]O),
 		inputs:   make(map[key[I]]I),
@@ -82,7 +81,6 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
 
 		markSynced: &sync.Once{},
-		stop:       make(chan struct{}),
 		inputQueue: fifo.NewQueue[inputEvent[I]](1024),
 
 		collectionDependencies: make(map[uint64]struct{}),

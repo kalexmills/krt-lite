@@ -20,10 +20,15 @@ Writing Kubernetes controllers is easier when you can:
 - [X] StaticCollection -- collections that don't change
 - [X] Indexer -- indexing an existing collection for quicker lookup.
 - [ ] Fetch -- fetching from a collection and tracking dependencies.
+  - [ ] UnregisterHandler
 - [ ] Filtering -- Filtering collections and on fetch.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
   - [X] Collection names (very needed for debugging)
-- [ ] Pluggable logging via slog, and tests.
+- [ ] DiscardResult on Context.
+- [ ] Pluggable logging via slog.
+- [ ] Benchmarking.
+- [ ] Examples.
+- [ ] Documentation.
 
 ## Known Issues
 - [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere (in Informer, if possible).
