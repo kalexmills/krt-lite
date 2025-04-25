@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 )
 
+// Syncer is used to indicate that a Collection has synced.
 type Syncer interface {
 	WaitUntilSynced(stopCh <-chan struct{}) bool
 	HasSynced() bool
@@ -104,14 +105,14 @@ func (s channelSyncer) HasSynced() bool {
 }
 
 // idSyncer is a bit like a waitgroup.
-type idSyncer struct {
+type idSyncer struct { // nolint:unused // May be used by Join
 	count   *atomic.Int64
 	indices *sync.Map
 	synced  chan struct{}
 }
 
 // newIDSyncer creates a new ID Syncer with IDs 0,...,n-1
-func newIDSyncer(n int) *idSyncer {
+func newIDSyncer(n int) *idSyncer { // nolint:unused // May be used by Join
 	if n == 0 {
 		ch := make(chan struct{})
 		close(ch)
@@ -133,7 +134,7 @@ func newIDSyncer(n int) *idSyncer {
 	}
 }
 
-func (s *idSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
+func (s *idSyncer) WaitUntilSynced(stop <-chan struct{}) bool { // nolint:unused // May be used by Join
 	select {
 	case <-s.synced:
 		return true
@@ -142,7 +143,7 @@ func (s *idSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 	}
 }
 
-func (s *idSyncer) HasSynced() bool {
+func (s *idSyncer) HasSynced() bool { // nolint:unused // May be used by Join
 	select {
 	case <-s.synced:
 
@@ -152,7 +153,7 @@ func (s *idSyncer) HasSynced() bool {
 	}
 }
 
-func (s *idSyncer) MarkSynced(id int) {
+func (s *idSyncer) MarkSynced(id int) { // nolint:unused // May be used by Join
 	select {
 	case <-s.synced:
 		return

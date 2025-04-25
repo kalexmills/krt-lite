@@ -6,10 +6,12 @@ import (
 	"sync"
 )
 
+// A StaticCollection contains elements which are not derived from other Collections. It is intended to be used to tie
+// events from other systems into KRT.
 type StaticCollection[T any] interface {
 	Collection[T]
 
-	// Update adds or updates an object from the collection.
+	// Update adds or updates an object.
 	Update(obj T)
 	// Delete deletes an object from the collection.
 	Delete(key string)
@@ -28,8 +30,10 @@ type staticList[T any] struct {
 	handlers map[*registrationHandler[Event[T]]]struct{}
 }
 
-// NewStaticCollection creates and returns a new static collection, initialized with the provided list of values. If
-// synced is nil, the collection will start synced.
+// NewStaticCollection creates and returns a new StaticCollection containing the provided list of values. The Syncer
+// provided is used to determine when this StaticCollection has seen all of its initial state. Caller is responsible
+// for ensuring the the Syncer passed eventually syncs -- failing to do so will prevent downstream Collections from
+// starting.
 func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOption) StaticCollection[T] {
 	if synced == nil {
 		synced = alwaysSynced{}

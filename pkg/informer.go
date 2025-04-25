@@ -142,11 +142,16 @@ func (i *informer[T]) List() []T {
 }
 
 func (i *informer[T]) Register(f func(ev Event[T])) Syncer {
-	return i.RegisterBatched(func(events []Event[T]) {
-		for _, ev := range events {
+	reg, err := i.inf.AddEventHandler(eventHandler[T]{
+		handler: func(ev Event[T], syncing bool) {
 			f(ev)
-		}
-	}, true)
+		},
+	})
+	if err != nil {
+		i.logger().Error("error registering informer handler", "err", err)
+	}
+
+	return i.syncerForRegistration(reg)
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Syncer {
@@ -159,6 +164,10 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 		i.logger().Error("error registering informer event handler", "err", err)
 	}
 
+	return i.syncerForRegistration(reg)
+}
+
+func (i *informer[T]) syncerForRegistration(reg cache.ResourceEventHandlerRegistration) Syncer {
 	synced := make(chan struct{})
 	go func() {
 		cache.WaitForCacheSync(i.stop, reg.HasSynced) // TODO: there's a max of ~100ms on startup to be saved by polling ourselves.

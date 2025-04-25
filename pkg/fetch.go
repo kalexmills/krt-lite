@@ -1,6 +1,6 @@
 package pkg
 
-// Context carries internal signals which allow Fetch to subscribe to upstream collections.
+// Context is used to track dependencies between Collections via Fetch.
 type Context interface {
 	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer)
 }
@@ -32,14 +32,15 @@ func (ctx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 	ctx.dependencies = append(ctx.dependencies, d)
 }
 
-// Fetch performs a List operation against the provided collection, subscribing to updates if ctx is set. If ctx is nil,
-// this is a one-time operation.
+// Fetch calls List on the provided Collection, and can be used to subscribe Collections created by Map or FlatMap to
+// updates from additional collections. Passing a non-nil Context to Fetch subscribes the collection to updates from
+// Collection c. When no Context is passed, Fetch is equivalent to c.List().
 func Fetch[T any](ctx Context, c Collection[T]) []T {
-	d := &dependency{
-		collectionID:   c.getUID(),
-		collectionName: c.getName(),
-	}
 	if ctx != nil {
+		d := &dependency{
+			collectionID:   c.getUID(),
+			collectionName: c.getName(),
+		}
 		ctx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
 			ff := func(ts []Event[T]) {
 				// do type erasure to cast from T to any.

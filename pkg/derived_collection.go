@@ -9,12 +9,14 @@ import (
 	"sync"
 )
 
-// Map creates a new collection by mapping each I into an O.
+// Map creates a new Collection by calling the provided Mapper on each item in C. The returned Collection will be kept
+// in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
+// Collection.
 //
-// Panics will occur if an unsupported type for I or O are used, see GetKey for details.
-func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
+// Panics will occur if an unsupported type for I or O is used, see GetKey for details.
+func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	ff := func(ctx Context, i I) []O {
-		res := f(ctx, i)
+		res := handler(ctx, i)
 		if res == nil {
 			return nil
 		}
@@ -23,7 +25,9 @@ func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectionOption) In
 	return FlatMap(c, ff, opts...)
 }
 
-// FlatMap creates a new collection by mapping every I into zero or more O.
+// FlatMap creates a new Collection by calling the provided FlatMapper on each item in C. Unlike Map, each item in
+// Collection c may result in zero or more items in the returned Collection. The returned Collection is kept in sync
+// with c. See Map for details.
 //
 // Panics will occur if an unsupported type of I or O are used, see GetKey for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {

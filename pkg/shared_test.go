@@ -53,7 +53,7 @@ func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collectio
 
 type Image string
 
-func (i Image) ResourceName() string {
+func (i Image) Key() string {
 	return string(i)
 }
 
@@ -93,7 +93,7 @@ func NewSimpleNamespace(name string, labels map[string]string) SimpleNamespace {
 	}
 }
 
-func (n SimpleNamespace) ResourceName() string {
+func (n SimpleNamespace) Key() string {
 	return n.Name
 }
 
@@ -113,7 +113,7 @@ type SimpleEndpoint struct {
 	IP        string
 }
 
-func (s SimpleEndpoint) ResourceName() string {
+func (s SimpleEndpoint) Key() string {
 	return "/" + s.Namespace + "/" + s.Service + "/" + s.Pod
 }
 
@@ -215,7 +215,7 @@ type Named struct {
 	Name      string
 }
 
-func (s Named) ResourceName() string {
+func (s Named) Key() string {
 	if s.Namespace != "" {
 		return s.Namespace + "/" + s.Name
 	}

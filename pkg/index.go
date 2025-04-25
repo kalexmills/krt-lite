@@ -4,6 +4,12 @@ import (
 	"sync"
 )
 
+// An Index allows subsets of items in a Collection to be efficiently retrieved via additional keys.
+type Index[T any] interface {
+	// Lookup retrieves all objects associated with the given key.
+	Lookup(key string) []T
+}
+
 // mapIndex implements an in-memory index to track groups of items in a collection by key.
 type mapIndex[O any] struct {
 	parent    Collection[O]

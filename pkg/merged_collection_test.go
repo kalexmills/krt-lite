@@ -28,7 +28,7 @@ func TestJoinCollection(t *testing.T) {
 		}
 	}
 	j.Register(func(o krtlite.Event[Named]) {
-		last.Store(o.Latest().ResourceName())
+		last.Store(o.Latest().Key())
 	})
 
 	AssertEventually(t, lastEquals(""))

@@ -7,13 +7,16 @@ import (
 	"sync"
 )
 
-// Merge merges together a slice of collections. If any keys overlap, all overlapping key are merged using the provided
-// Merger. Merger will always be called with at least two inputs.
-func Merge[T any](cs []Collection[T], j Merger[T], opts ...CollectionOption) IndexableCollection[T] {
-	return newMergedCollection(cs, j, opts)
+// Merge merges multiple collections into one. Items with duplicate keys are combined using the provided Merger. Merger
+// will always be called with at least two inputs.
+//
+// Deprecated: currently broken; do not use (yet).
+func Merge[T any](cs []Collection[T], handler Merger[T], opts ...CollectionOption) IndexableCollection[T] {
+	return newMergedCollection(cs, handler, opts)
 }
 
-// MergeDisjoint merges a slice of collections whose keys do not overlap.
+// MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
+// collection -- relying on this behavior is strongly discouraged.
 func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) IndexableCollection[T] {
 	return newMergedCollection(cs, nil, opts)
 }
