@@ -17,13 +17,16 @@ Writing Kubernetes controllers is easier when you can:
 
 ## Roadmap
 - [X] Joiner -- joining collections into one.
+  - [ ] Conformance tests.
 - [X] StaticCollection -- collections that don't change
 - [X] Indexer -- indexing an existing collection for quicker lookup.
-- [ ] Fetch -- fetching from a collection and tracking dependencies.
+- [X] Fetch -- fetching from a collection and tracking dependencies.
   - [ ] UnregisterHandler
 - [ ] Filtering -- Filtering collections and on fetch.
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
-  - [X] Collection names (very needed for debugging)
+  - [X] WithName Collection names (very needed for debugging)
+  - [X] WithStop
+  - [ ] WithDebugging
 - [ ] DiscardResult on Context.
 - [ ] Pluggable logging via slog.
 - [ ] Benchmarking.
@@ -31,4 +34,4 @@ Writing Kubernetes controllers is easier when you can:
 - [ ] Documentation.
 
 ## Known Issues
-- [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere (in Informer, if possible).
+- [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere (also in Informer, if possible).
