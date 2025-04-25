@@ -70,9 +70,10 @@ func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
 	return result
 }
 
-// NewTypedClientInformer returns a Collection[T] backed by an informer which uses the passed TypedClient. Caller must
-// ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
-// *corev1.Pods, TL must be *corev1.PodList.
+// NewTypedClientInformer returns a Collection[T] backed by an Informer created from the passed TypedClient.
+//
+// To avoid panics, caller must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list
+// object. For example, if T is *corev1.Pods, TL must be *corev1.PodList.
 func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
@@ -84,7 +85,9 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 	}, opts...)
 }
 
-// NewListerWatcherInformer creates a new collection from the provided cache.ListerWatcher.
+// NewListerWatcherInformer creates a new Collection from items returned by hte provided cache.ListerWatcher.
+//
+// Panics if the provided ListerWatcher does not return objects of type T.
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),

@@ -214,8 +214,9 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 				c.handleFetchEvents(input.sourceID, input.fetchEvents)
 				continue
 			}
-			c.logger().Debug("received events", "count", len(input.events))
+
 			c.handleEvents(input.events)
+			c.logger().Debug("handled events", "count", len(input.events))
 		}
 	}
 }

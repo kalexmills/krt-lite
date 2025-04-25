@@ -43,7 +43,7 @@ test-ci:
 
 .PHONY: bench
 bench: ## Runs go test with benchmarks.
-	@go test -bench=. ./...
+	@go test -bench=. -run=^$$ ./...
 ##
 # list
 # Displays a list of targets, using '##' comment as target description

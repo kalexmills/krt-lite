@@ -228,6 +228,10 @@ func (s Named) GetNamespace() string {
 	return s.Namespace
 }
 
+func (s Named) ResourceName() string {
+	return s.Namespace + "/" + s.Name
+}
+
 type Labeled struct {
 	Labels map[string]string
 }

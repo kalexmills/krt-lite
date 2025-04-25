@@ -76,18 +76,17 @@ func BenchmarkQueue_Send(b *testing.B) {
 		}
 	}()
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		q.In() <- 12
 	}
 	close(q.In())
 
-	fmt.Println("finished with capacity", q.queue.Cap())
 	wg.Wait()
 }
 
 func BenchmarkQueue_Receive(b *testing.B) {
 	stop := make(chan struct{})
-	defer close(stop)
 
 	q := NewQueue[int](1024)
 	q.Run(stop)
@@ -101,20 +100,19 @@ func BenchmarkQueue_Receive(b *testing.B) {
 			select {
 			case <-stop:
 				return
-			default:
-				q.In() <- 12
+			case q.In() <- 12:
 			}
 		}
 	}()
 
+	b.ResetTimer()
 	var x int
 	for i := 0; i < b.N; i++ {
 		x = <-q.Out()
 	}
 	close(stop)
 
-	fmt.Println(x)
+	fmt.Println(x) // avoid compiler optimization
 
-	fmt.Println("finished with capacity", q.queue.Cap())
 	wg.Wait()
 }

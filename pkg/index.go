@@ -10,6 +10,18 @@ type Index[T any] interface {
 	Lookup(key string) []T
 }
 
+// NewNamespaceIndex indexes the provided Collection by namespace.
+func NewNamespaceIndex[T GetNamespacer](c IndexableCollection[T]) Index[T] {
+	return c.Index(func(t T) []string {
+		return []string{t.GetNamespace()}
+	})
+}
+
+// GetNamespacer is implemented by most runtime.Object.
+type GetNamespacer interface {
+	GetNamespace() string
+}
+
 // mapIndex implements an in-memory index to track groups of items in a collection by key.
 type mapIndex[O any] struct {
 	parent    Collection[O]
