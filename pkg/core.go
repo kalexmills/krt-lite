@@ -41,9 +41,11 @@ type IndexableCollection[T any] interface {
 	Index(extractor KeyExtractor[T]) Index[T]
 }
 
-// ComparableObject is implemented by pointer-types that implement runtime.Object. For example *corev1.Pod implements
-// ComparableObject, while not corev1.Pod does not.
+// ComparableObject is used internally to track dependencies among runtime.Object.
 type ComparableObject interface {
+	// This interface is implemented by pointer-types that also implement runtime.Object. For example *corev1.Pod
+	// implements ComparableObject, while not corev1.Pod does not.
+
 	runtime.Object
 	comparable
 }

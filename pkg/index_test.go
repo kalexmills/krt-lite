@@ -80,9 +80,10 @@ func TestIndex(t *testing.T) {
 			}
 
 			ConfigMaps := tt.makeIndex(c.CoreV1().ConfigMaps("ns"))
+			ConfigMaps.WaitUntilSynced(ctx.Done())
 
 			tt := NewTracker[*corev1.ConfigMap](t)
-			ConfigMaps.Register(tt.Track)
+			ConfigMaps.Register(tt.Track).WaitUntilSynced(ctx.Done())
 
 			assert.Empty(t, ConfigMaps.List())
 

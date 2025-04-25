@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        golang-version: [ '1.23' ]
+        golang-version: [ '1.24' ]
 
     steps:
       - uses: actions/checkout@v3
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        golang-version: [ '1.23' ]
+        golang-version: [ '1.24' ]
 
     steps:
       - uses: actions/checkout@v3
@@ -42,4 +42,4 @@ jobs:
           go-version: ${{ matrix.golang-version }}
           cache-dependency-path: "go.sum"
       - name: Run tests
-        run: make test
+        run: make test-ci

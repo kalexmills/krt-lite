@@ -63,8 +63,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 	_, err = nsClient.Update(ctx, ns, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleNamespaces, NewSimpleNamespace("ns-1", map[string]string{"foo": "bar"})),
-		"expected updates to propagate when labels added")
+	AssertEventuallyDeepEquals(t, SimpleNamespaces, NewSimpleNamespace("ns-1", map[string]string{"foo": "bar"}))
 
 	// modify labels and assert we see updates
 	ns.Labels["foo"] = "baz-updated"
@@ -72,8 +71,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 	_, err = nsClient.Update(ctx, ns, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleNamespaces, NewSimpleNamespace("ns-1", map[string]string{"foo": "baz-updated"})),
-		"expected updates to propagate when labels modified")
+	AssertEventuallyDeepEquals(t, SimpleNamespaces, NewSimpleNamespace("ns-1", map[string]string{"foo": "baz-updated"}))
 
 	// add a new handler and assert it gets synced.
 	tt := NewTracker[SimpleNamespace](t)
@@ -175,23 +173,22 @@ func TestCollectionMerged(t *testing.T) {
 	pod, err = podClient.Update(ctx, pod, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+	AssertEventuallyDeepEquals(t, SimpleEndpoints,
 		SimpleEndpoint{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.4"},
-	), "expected an endpoint once pod is assigned an IP")
+	)
 
 	pod.Status.PodIP = "1.2.3.5"
 	pod, err = podClient.UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+	AssertEventuallyDeepEquals(t, SimpleEndpoints,
 		SimpleEndpoint{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.5"},
-	), "expected endpoints to change when podIP changes")
+	)
 
 	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints),
-		"expected endpoints to be deleted when pod is removed") // empty
+	AssertEventuallyDeepEquals(t, SimpleEndpoints)
 
 	pod2 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -206,10 +203,10 @@ func TestCollectionMerged(t *testing.T) {
 	_, err = podClient.Create(ctx, pod2, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(SimpleEndpoints,
+	AssertEventuallyDeepEquals(t, SimpleEndpoints,
 		SimpleEndpoint{pod2.Name, svc.Name, pod2.Namespace, pod2.Status.PodIP},
 		SimpleEndpoint{pod.Name, svc.Name, pod.Namespace, pod.Status.PodIP},
-	), "expected multiple endpoints once pods are created")
+	)
 }
 
 func TestCollectionDiamond(t *testing.T) {
@@ -254,8 +251,10 @@ func TestCollectionDiamond(t *testing.T) {
 		}
 	}, krtlite.WithName("PodSizeCounts"))
 
+	PodSizeCounts.WaitUntilSynced(ctx.Done())
+
 	tt := NewTracker[PodSizeCount](t)
-	PodSizeCounts.Register(tt.Track)
+	PodSizeCounts.Register(tt.Track).WaitUntilSynced(ctx.Done())
 
 	assert.Empty(t, ListSorted(PodSizeCounts))
 
@@ -289,6 +288,7 @@ func TestCollectionDiamond(t *testing.T) {
 	assert.NoError(t, err)
 
 	tt.Wait("update/namespace/name")
+
 	assert.Equal(t, ListSorted(PodSizeCounts), []PodSizeCount{{
 		Named:         NewNamed(pod),
 		MatchingSizes: 1,
@@ -454,7 +454,7 @@ func TestCollectionMultipleFetch(t *testing.T) {
 
 	assertEventuallyLabelsEqual := func(labels ...string) {
 		t.Helper()
-		AssertEventually(t, CollectionContentsDeepEquals(Results, Result{Named: NewNamed(pod), Configs: labels}))
+		AssertEventuallyDeepEquals(t, Results, Result{Named: NewNamed(pod), Configs: labels})
 	}
 
 	pod, err := podClient.Create(ctx, pod, metav1.CreateOptions{})

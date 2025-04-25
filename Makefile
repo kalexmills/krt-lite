@@ -37,6 +37,10 @@ lint: ## Runs go fmt.
 test: ## Runs go test.
 	@go test -race -v ./...
 
+.PHONY: test-ci
+test-ci:
+	@go test -failfast -race -count 10 -shuffle on -v ./...
+
 .PHONY: bench
 bench: ## Runs go test with benchmarks.
 	@go test -bench=. ./...

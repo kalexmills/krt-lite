@@ -9,10 +9,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
 )
+
+func init() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+}
 
 func TestRegistrationSync(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

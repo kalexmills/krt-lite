@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	timeout      = time.Second * 2       // timeout is used for all Eventually and kontext.WithTimeout calls.
+	timeout      = time.Second * 5       // timeout is used for all Eventually and kontext.WithTimeout calls.
 	pollInterval = 50 * time.Millisecond // poll interval is used for all Eventually
 )
 
@@ -270,23 +270,27 @@ func CollectionKeysMatch[T any](coll krtlite.Collection[T], expectedNames ...str
 	}
 }
 
-func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObjs ...T) func() bool {
-	return func() bool {
-		listed := coll.List()
-		if len(listed) != len(expectedObjs) {
+func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObjs ...T) bool {
+	listed := coll.List()
+	if len(listed) != len(expectedObjs) {
+		return false
+	}
+	for i, obj := range expectedObjs {
+		if !reflect.DeepEqual(obj, listed[i]) {
+
 			return false
 		}
-		for i, obj := range expectedObjs {
-			if !reflect.DeepEqual(obj, listed[i]) {
-				return false
-			}
-		}
-		return true
 	}
+	return true
 }
 
-func AssertCollectionEmpty[T any](coll krtlite.Collection[T]) func() bool {
-	return CollectionContentsDeepEquals(coll) // asserts empty via length check.
+func AssertEventuallyDeepEquals[T any](t *testing.T, coll krtlite.Collection[T], expectedObjs ...T) {
+	passed := assert.Eventually(t, func() bool {
+		return CollectionContentsDeepEquals(coll, expectedObjs...)
+	}, timeout, pollInterval)
+	if !passed {
+		t.Errorf("got: %v; want: %v", coll.List(), expectedObjs)
+	}
 }
 
 func PodTemplateSpecWithImages(images ...string) corev1.PodTemplateSpec {
@@ -312,8 +316,12 @@ func AssertEventually(t *testing.T, f func() bool, msgAndArgs ...any) {
 
 func AssertEventuallyEqual(t *testing.T, expected any, getActual func() any, msgAndArgs ...any) {
 	t.Helper()
-	assert.Eventually(t, func() bool {
+	passed := assert.Eventually(t, func() bool {
 		actual := getActual()
 		return reflect.DeepEqual(expected, actual)
 	}, timeout, pollInterval, msgAndArgs...)
+
+	if !passed {
+		t.Errorf("want: %v; got: %v", expected, getActual())
+	}
 }

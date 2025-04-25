@@ -126,8 +126,7 @@ func TestJoin(t *testing.T) {
 	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 
-	AssertEventually(t, CollectionContentsDeepEquals(Images),
-		"expected mergedCollection collection to eventually be empty after all sources removed")
+	AssertEventuallyDeepEquals(t, Images)
 
 	// ensure duplicate keys get merged
 	job.Spec.Template = PodTemplateSpecWithImages("nikola/netshoot:latest")
