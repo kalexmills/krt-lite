@@ -1,7 +1,7 @@
 package pkg
 
 import (
-	"github.com/kalexmills/krt-plusplus/pkg/fifo"
+	"github.com/kalexmills/krt-lite/pkg/fifo"
 	"k8s.io/utils/ptr"
 	"maps"
 	"reflect"
@@ -12,7 +12,7 @@ import (
 // Map creates a new collection by mapping each I into an O.
 //
 // Panics will occur if an unsupported type for I or O are used, see GetKey for details.
-func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectorOption) IndexableCollection[O] {
+func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	ff := func(ctx Context, i I) []O {
 		res := f(ctx, i)
 		if res == nil {
@@ -26,16 +26,15 @@ func Map[I, O any](c Collection[I], f Mapper[I, O], opts ...CollectorOption) Ind
 // FlatMap creates a new collection by mapping every I into zero or more O.
 //
 // Panics will occur if an unsupported type of I or O are used, see GetKey for details.
-func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectorOption) IndexableCollection[O] {
+func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	res := newDerivedCollection(c, f, opts)
-	go res.run()
 	return res
 }
 
 // derivedCollection implements a collection whose contents are computed based on the contents of other collections.
 // Dependencies between collections are tracked to ensure updates are propagated properly.
 type derivedCollection[I, O any] struct {
-	collectionMeta
+	collectionShared
 
 	parent Collection[I]
 
@@ -52,7 +51,6 @@ type derivedCollection[I, O any] struct {
 	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 
-	stop      chan struct{}
 	parentReg Syncer
 
 	markSynced *sync.Once
@@ -66,11 +64,11 @@ type derivedCollection[I, O any] struct {
 	inputQueue *fifo.Queue[inputEvent[I]]
 }
 
-func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectorOption) *derivedCollection[I, O] {
+func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectionOption) *derivedCollection[I, O] {
 	c := &derivedCollection[I, O]{
-		collectionMeta: newCollectorMeta(opts),
-		parent:         parent,
-		transformer:    f,
+		collectionShared: newCollectionShared(opts),
+		parent:           parent,
+		transformer:      f,
 
 		outputs:  make(map[key[O]]O),
 		inputs:   make(map[key[I]]I),
@@ -82,7 +80,6 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
 
 		markSynced: &sync.Once{},
-		stop:       make(chan struct{}),
 		inputQueue: fifo.NewQueue[inputEvent[I]](1024),
 
 		collectionDependencies: make(map[uint64]struct{}),
@@ -95,6 +92,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		parent,
 		&channelSyncer{synced: c.syncedCh},
 	)
+	go c.run()
 	return c
 }
 
@@ -173,7 +171,9 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent synced")
 
-	c.parentReg = c.parent.RegisterBatched(c.pushInputEvents, true)
+	c.parentReg = c.parent.RegisterBatched(func(evs []Event[I]) {
+		c.inputQueue.In() <- inputEvents(evs)
+	}, true)
 
 	// parent registration will push to the queue, so it must be running before we wait for registration to sync.
 	go c.inputQueue.Run(c.stop)
@@ -183,14 +183,11 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent registration synced")
 
-	c.processInputQueue()
-}
-
-func (c *derivedCollection[I, O]) pushInputEvents(events []Event[I]) {
-	c.inputQueue.In() <- inputEvents(events)
+	// parent is synced so they must have pushed everything -- mark ourselves as synced once everything has processed
 	c.markSynced.Do(func() {
 		c.inputQueue.In() <- inputEventParentIsSynced[I]()
 	})
+	c.processInputQueue()
 }
 
 func (c *derivedCollection[I, O]) pushFetchEvents(sourceID uint64, events []Event[any]) {
@@ -476,7 +473,7 @@ func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
 		return
 	}
 
-	select {
+	select { // if we're already synced then return
 	case <-p.syncedCh:
 		return
 	default:

@@ -2,7 +2,7 @@ package pkg_test
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-plusplus/pkg"
+	krtlite "github.com/kalexmills/krt-lite/pkg"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +41,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 	nsClient := client.CoreV1().Namespaces()
 
 	// create collections
-	Namespaces := krtlite.NewInformer[*corev1.Namespace, *corev1.NamespaceList](ctx, nsClient)
+	Namespaces := krtlite.NewTypedClientInformer[*corev1.Namespace, *corev1.NamespaceList](ctx, nsClient)
 	Namespaces.WaitUntilSynced(ctx.Done())
 	SimpleNamespaces := SimpleNamespaceCollection(Namespaces)
 
@@ -114,8 +114,8 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 			Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
 		},
 	)
-	pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-	services := krtlite.NewInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"))
 
 	// assert that collections are equal immediately after waiting for sync.
 	SimplePods := SimplePodCollection(pods)
@@ -133,9 +133,9 @@ func TestCollectionMerged(t *testing.T) {
 
 	c := fake.NewClientset()
 	podClient := c.CoreV1().Pods("namespace")
-	pods := krtlite.NewInformer[*corev1.Pod](ctx, podClient, krtlite.WithName("Pods"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, podClient, krtlite.WithName("Pods"))
 	svcClient := c.CoreV1().Services("namespace")
-	services := krtlite.NewInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
 
 	// TODO: not waiting for informers to start causes messages to be dropped.
 	pods.WaitUntilSynced(ctx.Done())
@@ -232,7 +232,7 @@ func TestCollectionDiamond(t *testing.T) {
 	c := fake.NewClientset()
 	podClient := c.CoreV1().Pods("namespace")
 
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
 
 	SimplePods := SimplePodCollection(Pods)
 	SizedPods := SizedPodCollection(Pods)
@@ -411,8 +411,8 @@ func TestCollectionMultipleFetch(t *testing.T) {
 	podClient := c.CoreV1().Pods("namespace")
 	cmClient := c.CoreV1().ConfigMaps("namespace")
 
-	Pods := krtlite.NewInformer[*corev1.Pod, *corev1.PodList](ctx, podClient, krtlite.WithName("Pods"))
-	ConfigMaps := krtlite.NewInformer[*corev1.ConfigMap, *corev1.ConfigMapList](ctx, cmClient, krtlite.WithName("ConfigMaps"))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod, *corev1.PodList](ctx, podClient, krtlite.WithName("Pods"))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap, *corev1.ConfigMapList](ctx, cmClient, krtlite.WithName("ConfigMaps"))
 
 	lblFoo := map[string]string{"app": "foo"}
 	lblBar := map[string]string{"app": "bar"}

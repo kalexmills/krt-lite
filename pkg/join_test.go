@@ -2,7 +2,7 @@ package pkg_test
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-plusplus/pkg"
+	krtlite "github.com/kalexmills/krt-lite/pkg"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -56,9 +56,9 @@ func TestJoin(t *testing.T) {
 	podClient := c.CoreV1().Pods("namespace")
 	jobClient := c.BatchV1().Jobs("namespace")
 
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
 		krtlite.WithName("Pods"))
-	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs("namespace"),
+	Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs("namespace"),
 		krtlite.WithName("Jobs"))
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
@@ -192,8 +192,8 @@ func TestCollectionJoinDisjointSync(t *testing.T) {
 		},
 	)
 
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
-	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
+	Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 
@@ -226,8 +226,8 @@ func TestCollectionJoinSync(t *testing.T) { // TODO: dedup with TestCollectionJo
 		},
 	)
 
-	Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
-	Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
+	Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 

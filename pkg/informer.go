@@ -6,21 +6,75 @@ import (
 	"fmt"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"log/slog"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"time"
 )
 
 const keyIdx = "namespace/name"
 
-// NewInformer returns a collection backed by an informer which uses the passed client. Caller is responsible to ensure
-// that if O denotes a runtime.Object, then TL denotes the corresponding list object. For example, if O is *corev1.Pods,
-// TL must be *corev1.PodList.
-func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectorOption) IndexableCollection[T] {
-	return NewInformerFromListerWatcher[T](&cache.ListWatch{
+// NewInformer returns a Collection[T] backed by an informer which uses the provided controller-runtime Client. Caller
+// must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
+// *corev1.Pods, TL must be *corev1.PodList. TL must implement client.ObjectList.
+func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
+	return NewListerWatcherInformer[T](&cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			tl := PT(new(TL))
+			if err := c.List(ctx, tl, metaOptionsToCtrlOptions(options)...); err != nil {
+				return nil, err
+			}
+			return tl, nil
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			tl := PT(new(TL))
+			wl, err := c.Watch(ctx, tl, metaOptionsToCtrlOptions(options)...)
+			if err != nil {
+				return nil, err
+			}
+			return wl, nil
+		},
+	}, opts...)
+}
+
+// ptrTL exists to allow pointers to be instantiated
+type ptrTL[T any] interface {
+	*T
+	client.ObjectList
+}
+
+func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
+	var result []client.ListOption
+	if opts.Limit > 0 {
+		result = append(result, client.Limit(opts.Limit))
+	}
+	if opts.Continue != "" {
+		result = append(result, client.Continue(opts.Continue))
+	}
+	if opts.LabelSelector != "" {
+		ls, err := labels.Parse(opts.LabelSelector)
+		if err == nil {
+			result = append(result, client.MatchingLabelsSelector{Selector: ls})
+		}
+	}
+	if opts.FieldSelector != "" {
+		fs, err := fields.ParseSelector(opts.FieldSelector)
+		if err == nil {
+			result = append(result, client.MatchingFieldsSelector{Selector: fs})
+		}
+	}
+	return result
+}
+
+// NewTypedClientInformer returns a Collection[T] backed by an informer which uses the passed TypedClient. Caller must
+// ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
+// *corev1.Pods, TL must be *corev1.PodList.
+func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
+	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			return c.List(ctx, opts)
 		},
@@ -30,10 +84,10 @@ func NewInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c T
 	}, opts...)
 }
 
-// NewInformerFromListerWatcher creates a new collection from the provided cache.ListerWatcher.
-func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, opts ...CollectorOption) IndexableCollection[T] {
+// NewListerWatcherInformer creates a new collection from the provided cache.ListerWatcher.
+func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
-		collectionMeta: newCollectorMeta(opts),
+		collectionShared: newCollectionShared(opts),
 		inf: cache.NewSharedIndexInformer(
 			lw,
 			zero[T](),
@@ -58,7 +112,7 @@ func NewInformerFromListerWatcher[T ComparableObject](lw cache.ListerWatcher, op
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
 type informer[T runtime.Object] struct {
-	collectionMeta
+	collectionShared
 	inf    cache.SharedIndexInformer
 	stop   chan struct{}
 	synced chan struct{}

@@ -9,23 +9,23 @@ import (
 
 // Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
 // Joiner. Joiner will always be called with at least two inputs.
-func Join[T any](cs []Collection[T], j Joiner[T], opts ...CollectorOption) IndexableCollection[T] {
+func Join[T any](cs []Collection[T], j Joiner[T], opts ...CollectionOption) IndexableCollection[T] {
 	return newJoinedCollection(cs, j, opts)
 }
 
 // JoinDisjoint joins together a slice of collections whose keys do not overlap.
-func JoinDisjoint[T any](cs []Collection[T], opts ...CollectorOption) IndexableCollection[T] {
+func JoinDisjoint[T any](cs []Collection[T], opts ...CollectionOption) IndexableCollection[T] {
 	return newJoinedCollection(cs, nil, opts)
 }
 
 // joinedCollection joins together the results of several collections, all of which have the same type.
 type joinedCollection[O any] struct {
-	collectionMeta
+	collectionShared
 	collections []Collection[O]
-	stop        chan struct{}
 	joiner      Joiner[O]
 	syncer      *multiSyncer
-	idSyncer    *idSyncer
+	synced      chan struct{}
+	stop        chan struct{}
 
 	// TODO: this should be a good use-case for wrapping up a type-safe sync.Map instead of using global locks
 
@@ -46,13 +46,13 @@ type joinedCollection[O any] struct {
 
 var _ Collection[any] = &joinedCollection[any]{}
 
-func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []CollectorOption) *joinedCollection[O] {
+func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []CollectionOption) *joinedCollection[O] {
 	j := &joinedCollection[O]{
-		collectionMeta: newCollectorMeta(opts),
-		collections:    cs,
-		stop:           make(chan struct{}),
-		syncer:         newMultiSyncer(),
-		joiner:         joiner,
+		collectionShared: newCollectionShared(opts),
+		collections:      cs,
+		joiner:           joiner,
+		stop:             make(chan struct{}),
+		synced:           make(chan struct{}),
 
 		inMut:   &sync.Mutex{},
 		outMut:  &sync.RWMutex{},
@@ -65,24 +65,42 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 		regHandlerMut:      &sync.RWMutex{},
 		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
 	}
+	j.syncer = newMultiSyncer(channelSyncer{synced: j.synced})
 
-	// note: we have to set the idSyncer prior to calling RegisterBatched on our parents to avoid a data race.
-	if joiner != nil {
-		j.idSyncer = newIDSyncer(len(cs))
-		j.syncer.Add(j.idSyncer)
-	}
+	go j.init()
+	return j
+}
 
-	for idx, c := range cs {
-		j.syncer.Add(c)
+// init registers this joinedCollection with its parents and handles sync
+func (j *joinedCollection[O]) init() {
+	defer close(j.synced)
 
-		if joiner != nil {
-			// register with all our parents so we can track which inputs come from which collection.
-			reg := c.RegisterBatched(j.handleEvents(idx), true)
-
-			j.syncer.Add(reg)
+	// wait for all parent collections to sync
+	j.logger().Debug("waiting for parents to sync")
+	for _, c := range j.collections {
+		if !c.WaitUntilSynced(j.stop) {
+			return
 		}
 	}
-	return j
+
+	if j.joiner == nil {
+		j.logger().Debug("joiner is nil, synced")
+		return
+	}
+
+	syn := make([]Syncer, 0, len(j.collections))
+
+	j.logger().Debug("registering with parents")
+	// register with all parent collections
+	for idx, c := range j.collections {
+		// register with all our parents, tracking which inputs come from which collection.
+		reg := c.RegisterBatched(j.handleEvents(idx), true)
+		syn = append(syn, reg)
+	}
+
+	// wait for all parents to be synced
+	newMultiSyncer(syn...).WaitUntilSynced(j.stop)
+	j.logger().Info("parent registrations are finished; synced")
 }
 
 // handleEvents handles events coming from the collection with the provided index.
@@ -154,10 +172,10 @@ func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 			}
 		}
 
-		if !j.idSyncer.HasSynced() {
-			j.idSyncer.MarkSynced(idx)
-		} else if j.HasSynced() {
+		if j.HasSynced() {
 			j.distributeEvents(outEvents, false)
+		} else {
+			j.logger().Debug("throwing away events because we weren't synced")
 		}
 	}
 }
@@ -208,7 +226,7 @@ func (j *joinedCollection[O]) GetKey(k string) *O {
 func (j *joinedCollection[O]) List() []O {
 	var res []O
 
-	// if no joiner was provided, collect and return your result on-the-fly.
+	// if no joiner was provided, collect and return results on-the-fly.
 	if j.joiner == nil {
 		first := true
 		for _, c := range j.collections {
@@ -240,13 +258,14 @@ func (j *joinedCollection[O]) Register(f func(o Event[O])) Syncer {
 
 func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
 	if j.joiner == nil {
-		s := multiSyncer{}
+		s := newMultiSyncer()
 		// TODO: handle deregistration
-		// register with each parent collection, and add to our of collections waiting for sync.
+		// register with each parent collection, and add to our list of collections waiting for sync.
 		for _, c := range j.collections {
 			reg := c.RegisterBatched(f, runExistingState)
 			s.syncers = append(s.syncers, reg)
 		}
+		return s
 	}
 
 	p := newRegistrationHandler(j, f)

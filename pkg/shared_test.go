@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	krtlite "github.com/kalexmills/krt-plusplus/pkg"
+	krtlite "github.com/kalexmills/krt-lite/pkg"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -207,7 +207,7 @@ func (t *tracker[T]) Wait(events ...string) {
 			delete(t.events, ev)
 		}
 		return true
-	}, timeout, pollInterval)
+	}, timeout, pollInterval, "expected events: %v", events)
 }
 
 type Named struct {

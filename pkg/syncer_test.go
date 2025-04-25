@@ -2,7 +2,7 @@ package pkg_test
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-plusplus/pkg"
+	krtlite "github.com/kalexmills/krt-lite/pkg"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +26,7 @@ func TestRegistrationSync(t *testing.T) {
 			},
 		})
 
-		ConfigMaps := krtlite.NewInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+		ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
 
 		doTest(t, ctx, ConfigMaps)
 	})
@@ -40,7 +40,7 @@ func TestRegistrationSync(t *testing.T) {
 			Status: corev1.PodStatus{PodIP: "1.2.3.4"},
 		})
 
-		Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+		Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
 		SimplePods := SimplePodCollection(Pods)
 
 		doTest(t, ctx, SimplePods)
@@ -66,9 +66,9 @@ func TestRegistrationSync(t *testing.T) {
 			},
 		)
 
-		Pods := krtlite.NewInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll),
+		Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll),
 			krtlite.WithName("Pods"))
-		Jobs := krtlite.NewInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll),
+		Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll),
 			krtlite.WithName("Jobs"))
 
 		Containers := krtlite.Join([]krtlite.Collection[Image]{SimpleImageCollectionFromJobs(Jobs), SimpleImageCollectionFromPods(Pods)},

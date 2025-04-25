@@ -70,34 +70,39 @@ type Singleton[T any] interface {
 	Set(*T)
 }
 
-type collectionMeta struct {
+// collectionShared contains metadata and fields common to controllers.
+type collectionShared struct {
 	uid  uint64
 	name string
+	stop <-chan struct{}
 }
 
 //nolint:unused // TODO: remove if still unused
-func (c collectionMeta) getName() string {
+func (c collectionShared) getName() string {
 	return c.name
 }
 
 //nolint:unused // TODO: remove if still unused
-func (c collectionMeta) getUID() uint64 {
+func (c collectionShared) getUID() uint64 {
 	return c.uid
 }
 
-func (c collectionMeta) logger() *slog.Logger {
+func (c collectionShared) logger() *slog.Logger {
 	return slog.With("uid", c.uid, "collectionName", c.name)
 }
 
-func newCollectorMeta(options []CollectorOption) collectionMeta {
-	meta := &collectionMeta{uid: nextUID()}
+func newCollectionShared(options []CollectionOption) collectionShared {
+	meta := &collectionShared{
+		uid:  nextUID(),
+		stop: make(chan struct{}),
+	}
 	for _, option := range options {
 		option(meta)
 	}
 	return *meta
 }
 
-type CollectorOption func(m *collectionMeta)
+type CollectionOption func(m *collectionShared)
 
 // An Index allows subsets of items in a collection to be indexed.
 type Index[T any] interface {

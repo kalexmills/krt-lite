@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	krtlite "github.com/kalexmills/krt-plusplus/pkg"
+	krtlite "github.com/kalexmills/krt-lite/pkg"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,13 +25,13 @@ func TestIndex(t *testing.T) {
 		{
 			name: "Informer",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				return krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
+				return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
 			},
 		},
 		{
 			name: "Map",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
 				return krtlite.Map[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) **corev1.ConfigMap {
 					return &cm
 				})
@@ -40,7 +40,7 @@ func TestIndex(t *testing.T) {
 		{
 			name: "FlatMap", // include both Map + FlatMap in case implementations later change
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				inf := krtlite.NewInformer[*corev1.ConfigMap](ctx, c)
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
 				return krtlite.FlatMap[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) []*corev1.ConfigMap {
 					return []*corev1.ConfigMap{cm}
 				})

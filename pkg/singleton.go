@@ -7,7 +7,7 @@ import (
 )
 
 // NewSingleton creates an returns a new Singleton.
-func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectorOption) Singleton[T] {
+func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectionOption) Singleton[T] {
 	result := newSingleton[T](opts)
 	result.Set(initial)
 	if startSynced {
@@ -17,7 +17,7 @@ func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectorOption) 
 }
 
 type singleton[T any] struct {
-	collectionMeta
+	collectionShared
 	val     atomic.Pointer[T]
 	synced  atomic.Bool
 	currKey string
@@ -26,12 +26,12 @@ type singleton[T any] struct {
 	handlers []func(o []Event[T])
 }
 
-func newSingleton[T any](opts []CollectorOption) *singleton[T] {
+func newSingleton[T any](opts []CollectionOption) *singleton[T] {
 	return &singleton[T]{
-		collectionMeta: newCollectorMeta(opts),
-		val:            atomic.Pointer[T]{},
-		synced:         atomic.Bool{},
-		mut:            new(sync.RWMutex),
+		collectionShared: newCollectionShared(opts),
+		val:              atomic.Pointer[T]{},
+		synced:           atomic.Bool{},
+		mut:              new(sync.RWMutex),
 	}
 }
 
@@ -116,6 +116,8 @@ func (s *singleton[T]) Set(now *T) {
 		}
 		s.currKey = GetKey(*now)
 	}
+	s.mut.RLock()
+	defer s.mut.RUnlock()
 	for _, h := range s.handlers {
 		h([]Event[T]{ev})
 	}

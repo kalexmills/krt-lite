@@ -27,6 +27,7 @@ func (q *Queue[T]) Run(stop <-chan struct{}) {
 	}
 	var zero T
 
+	q.running = true
 	go func() {
 		outCh := func() chan<- T {
 			if q.queue.Len() == 0 {
@@ -59,7 +60,6 @@ func (q *Queue[T]) Run(stop <-chan struct{}) {
 		q.running = false
 		close(q.out)
 	}()
-	q.running = true
 }
 
 // In returns the input channel. Closing the input channel closes the queue and shuts down the running goroutine.
