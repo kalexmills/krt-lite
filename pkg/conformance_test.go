@@ -33,13 +33,13 @@ func (r *informerRig) CreateObject(ctx context.Context, key string) {
 	})
 }
 
-type joinRig struct {
+type mergeRig struct {
 	krtlite.Collection[Named]
 	inner [2]krtlite.StaticCollection[Named]
 	idx   int
 }
 
-func (r *joinRig) CreateObject(ctx context.Context, key string) {
+func (r *mergeRig) CreateObject(ctx context.Context, key string) {
 	idx := r.idx
 	r.idx = (r.idx + 1) % len(r.inner) // Switch which collection we add to each time
 	ns, name, _ := strings.Cut(key, "/")
@@ -86,28 +86,28 @@ func TestConformance(t *testing.T) {
 		rig := &staticRig{StaticCollection: col}
 		runConformance[Named](t, rig)
 	})
-	t.Run("join", func(t *testing.T) {
+	t.Run("merge", func(t *testing.T) {
 		t.Skip("TODO: fix this collection")
 		takeFirst := func(ns []Named) Named { return ns[0] }
 		ctx := t.Context()
 		col1 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
 		col2 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
-		j := krtlite.Join[Named]([]krtlite.Collection[Named]{col1, col2}, takeFirst,
-			krtlite.WithStop(ctx.Done()), krtlite.WithName("Join"))
-		rig := &joinRig{
+		j := krtlite.Merge[Named]([]krtlite.Collection[Named]{col1, col2}, takeFirst,
+			krtlite.WithStop(ctx.Done()), krtlite.WithName("Merge"))
+		rig := &mergeRig{
 			Collection: j,
 			inner:      [2]krtlite.StaticCollection[Named]{col1, col2},
 		}
 		runConformance[Named](t, rig)
 	})
 
-	t.Run("joinDisjoint", func(t *testing.T) {
+	t.Run("mergeDisjoint", func(t *testing.T) {
 		ctx := t.Context()
 		col1 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
 		col2 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
-		j := krtlite.JoinDisjoint[Named]([]krtlite.Collection[Named]{col1, col2},
-			krtlite.WithStop(ctx.Done()), krtlite.WithName("JoinDisjoint"))
-		rig := &joinRig{
+		j := krtlite.MergeDisjoint[Named]([]krtlite.Collection[Named]{col1, col2},
+			krtlite.WithStop(ctx.Done()), krtlite.WithName("MergeDisjoint"))
+		rig := &mergeRig{
 			Collection: j,
 			inner:      [2]krtlite.StaticCollection[Named]{col1, col2},
 		}

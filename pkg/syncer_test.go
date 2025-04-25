@@ -46,7 +46,7 @@ func TestRegistrationSync(t *testing.T) {
 		doTest(t, ctx, SimplePods)
 	})
 
-	t.Run("joinCollection", func(t *testing.T) {
+	t.Run("mergeCollection", func(t *testing.T) {
 		c := fake.NewClientset(
 			&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -71,7 +71,7 @@ func TestRegistrationSync(t *testing.T) {
 		Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll),
 			krtlite.WithName("Jobs"))
 
-		Containers := krtlite.Join([]krtlite.Collection[Image]{SimpleImageCollectionFromJobs(Jobs), SimpleImageCollectionFromPods(Pods)},
+		Containers := krtlite.Merge([]krtlite.Collection[Image]{SimpleImageCollectionFromJobs(Jobs), SimpleImageCollectionFromPods(Pods)},
 			func(ts []Image) Image { return ts[0] },
 			krtlite.WithName("Containers"))
 

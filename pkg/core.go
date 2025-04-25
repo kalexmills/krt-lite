@@ -17,8 +17,8 @@ type (
 	// A FlatMapper maps an I to many O.
 	FlatMapper[I, O any] func(ctx Context, i I) []O
 
-	// A Joiner joins two or more O into one. Must be a pure function.
-	Joiner[T any] func(ts []T) T
+	// A Merger merges two or more O into one. Must be a pure function.
+	Merger[T any] func(ts []T) T
 
 	// A KeyExtractor is used to extract mapIndex keys from an object.
 	KeyExtractor[T any] func(t T) []string

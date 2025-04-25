@@ -17,7 +17,7 @@ func TestJoinCollection(t *testing.T) {
 	c2 := krtlite.NewSingleton[Named](nil, true)
 	c3 := krtlite.NewSingleton[Named](nil, true)
 
-	j := krtlite.JoinDisjoint([]krtlite.Collection[Named]{c1, c2, c3})
+	j := krtlite.MergeDisjoint([]krtlite.Collection[Named]{c1, c2, c3})
 
 	last := atomic.Value{}
 	last.Store("")
@@ -63,10 +63,10 @@ func TestJoin(t *testing.T) {
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 
-	joiner := func(vals []Image) Image {
+	merger := func(vals []Image) Image {
 		return vals[0]
 	}
-	Images := krtlite.Join[Image]([]krtlite.Collection[Image]{PodImages, JobImages}, joiner,
+	Images := krtlite.Merge[Image]([]krtlite.Collection[Image]{PodImages, JobImages}, merger,
 		krtlite.WithName("Images"))
 
 	PodImages.WaitUntilSynced(ctx.Done())
@@ -74,9 +74,9 @@ func TestJoin(t *testing.T) {
 
 	Images.WaitUntilSynced(ctx.Done())
 
-	assert.Empty(t, Images.List(), "expected joinedCollection collection to start empty")
+	assert.Empty(t, Images.List(), "expected mergedCollection collection to start empty")
 
-	// create a pod with no images and expect joinedCollection collection to be empty
+	// create a pod with no images and expect mergedCollection collection to be empty
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "name",
@@ -86,7 +86,7 @@ func TestJoin(t *testing.T) {
 	_, err := podClient.Create(ctx, pod, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	assert.Empty(t, Images.List(), "expected joinedCollection collection to be empty after ineffective updates upstream")
+	assert.Empty(t, Images.List(), "expected mergedCollection collection to be empty after ineffective updates upstream")
 
 	// create a job and update a pod and expect both images to propagate
 	job := &batchv1.Job{
@@ -112,7 +112,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "istio:latest", "nikola/netshoot:latest"),
-		"expected joinedCollection collection to eventually contain data from both sources")
+		"expected mergedCollection collection to eventually contain data from both sources")
 
 	// remove containers from the job and expect result to be deleted.
 	job.Spec.Template.Spec.Containers = nil
@@ -120,14 +120,14 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest"),
-		"expected joinedCollection collection entries to eventually be removed when upstream updated")
+		"expected mergedCollection collection entries to eventually be removed when upstream updated")
 
 	// delete pod and expect no images.
 	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionContentsDeepEquals(Images),
-		"expected joinedCollection collection to eventually be empty after all sources removed")
+		"expected mergedCollection collection to eventually be empty after all sources removed")
 
 	// ensure duplicate keys get merged
 	job.Spec.Template = PodTemplateSpecWithImages("nikola/netshoot:latest")
@@ -147,7 +147,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest"),
-		"expected joinedCollection collection to eventually overlap duplicate keys correctly")
+		"expected mergedCollection collection to eventually overlap duplicate keys correctly")
 
 	// ensure many entries propagate correctly
 	pod.Spec = PodSpecWithImages("istio:latest")
@@ -166,7 +166,7 @@ func TestJoin(t *testing.T) {
 	assert.NoError(t, err)
 
 	AssertEventually(t, CollectionKeysMatch(Images, "nikola/netshoot:latest", "istio:latest", "busybox:latest", "kube-api-server:v1.21.0", "istio-sidecar:latest"),
-		"expected joinedCollection collection to contain all containers")
+		"expected mergedCollection collection to contain all containers")
 }
 
 func TestCollectionJoinDisjointSync(t *testing.T) {
@@ -197,7 +197,7 @@ func TestCollectionJoinDisjointSync(t *testing.T) {
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 
-	AllImages := krtlite.JoinDisjoint([]krtlite.Collection[Image]{PodImages, JobImages})
+	AllImages := krtlite.MergeDisjoint([]krtlite.Collection[Image]{PodImages, JobImages})
 
 	assert.True(t, AllImages.WaitUntilSynced(ctx.Done()))
 	assert.True(t, CollectionKeysMatch(AllImages, "cilium:latest", "nikola/netshoot:latest")())
@@ -231,7 +231,7 @@ func TestCollectionJoinSync(t *testing.T) { // TODO: dedup with TestCollectionJo
 	PodImages := SimpleImageCollectionFromPods(Pods)
 	JobImages := SimpleImageCollectionFromJobs(Jobs)
 
-	AllImages := krtlite.Join([]krtlite.Collection[Image]{PodImages, JobImages}, func(ts []Image) Image {
+	AllImages := krtlite.Merge([]krtlite.Collection[Image]{PodImages, JobImages}, func(ts []Image) Image {
 		return ts[0]
 	})
 
@@ -244,7 +244,7 @@ func TestJoinJoiner(t *testing.T) {
 	c2 := krtlite.NewSingleton[Named](nil, true)
 	c3 := krtlite.NewSingleton[Named](nil, true)
 
-	j := krtlite.Join[Named]([]krtlite.Collection[Named]{c1, c2, c3},
+	j := krtlite.Merge[Named]([]krtlite.Collection[Named]{c1, c2, c3},
 		func(ts []Named) Named {
 			var result string // concatenate names of matching keys, using / as a delimiter.
 			for i, t := range ts {

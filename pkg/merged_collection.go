@@ -7,22 +7,22 @@ import (
 	"sync"
 )
 
-// Join joins together a slice of collections. If any keys overlap, all overlapping key are joined using the provided
-// Joiner. Joiner will always be called with at least two inputs.
-func Join[T any](cs []Collection[T], j Joiner[T], opts ...CollectionOption) IndexableCollection[T] {
-	return newJoinedCollection(cs, j, opts)
+// Merge merges together a slice of collections. If any keys overlap, all overlapping key are merged using the provided
+// Merger. Merger will always be called with at least two inputs.
+func Merge[T any](cs []Collection[T], j Merger[T], opts ...CollectionOption) IndexableCollection[T] {
+	return newMergedCollection(cs, j, opts)
 }
 
-// JoinDisjoint joins together a slice of collections whose keys do not overlap.
-func JoinDisjoint[T any](cs []Collection[T], opts ...CollectionOption) IndexableCollection[T] {
-	return newJoinedCollection(cs, nil, opts)
+// MergeDisjoint merges a slice of collections whose keys do not overlap.
+func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) IndexableCollection[T] {
+	return newMergedCollection(cs, nil, opts)
 }
 
-// joinedCollection joins together the results of several collections, all of which have the same type.
-type joinedCollection[O any] struct {
+// mergedCollection merges the results of several collections, all of which have the same type.
+type mergedCollection[O any] struct {
 	collectionShared
 	collections []Collection[O]
-	joiner      Joiner[O]
+	merger      Merger[O]
 	syncer      *multiSyncer
 	synced      chan struct{}
 	stop        chan struct{}
@@ -44,13 +44,13 @@ type joinedCollection[O any] struct {
 	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
 }
 
-var _ Collection[any] = &joinedCollection[any]{}
+var _ Collection[any] = &mergedCollection[any]{}
 
-func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []CollectionOption) *joinedCollection[O] {
-	j := &joinedCollection[O]{
+func newMergedCollection[O any](cs []Collection[O], merger Merger[O], opts []CollectionOption) *mergedCollection[O] {
+	j := &mergedCollection[O]{
 		collectionShared: newCollectionShared(opts),
 		collections:      cs,
-		joiner:           joiner,
+		merger:           merger,
 		stop:             make(chan struct{}),
 		synced:           make(chan struct{}),
 
@@ -71,8 +71,8 @@ func newJoinedCollection[O any](cs []Collection[O], joiner Joiner[O], opts []Col
 	return j
 }
 
-// init registers this joinedCollection with its parents and handles sync
-func (j *joinedCollection[O]) init() {
+// init registers this mergedCollection with its parents and handles sync
+func (j *mergedCollection[O]) init() {
 	defer close(j.synced)
 
 	// wait for all parent collections to sync
@@ -83,8 +83,8 @@ func (j *joinedCollection[O]) init() {
 		}
 	}
 
-	if j.joiner == nil {
-		j.logger().Debug("joiner is nil, synced")
+	if j.merger == nil {
+		j.logger().Debug("merger is nil, synced")
 		return
 	}
 
@@ -104,7 +104,7 @@ func (j *joinedCollection[O]) init() {
 }
 
 // handleEvents handles events coming from the collection with the provided index.
-func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
+func (j *mergedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 	return func(events []Event[O]) {
 		j.inMut.Lock()
 		defer j.inMut.Unlock()
@@ -148,7 +148,7 @@ func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 				if len(inputMap) == 1 {
 					j.outputs[k] = inputMap[idx]
 				} else {
-					j.outputs[k] = j.joiner(slices.Collect(maps.Values(inputMap)))
+					j.outputs[k] = j.merger(slices.Collect(maps.Values(inputMap)))
 				}
 
 				newO := j.outputs[k]
@@ -180,7 +180,7 @@ func (j *joinedCollection[O]) handleEvents(idx int) func(events []Event[O]) {
 	}
 }
 
-func (j *joinedCollection[O]) distributeEvents(events []Event[O], isInInitialList bool) {
+func (j *mergedCollection[O]) distributeEvents(events []Event[O], isInInitialList bool) {
 	j.idxMut.RLock()
 	for _, idx := range j.indices {
 		idx.handleEvents(events)
@@ -195,7 +195,7 @@ func (j *joinedCollection[O]) distributeEvents(events []Event[O], isInInitialLis
 }
 
 // getInputMap fetches and lazily initializes the output map associated with the provided key. Caller must hold inMut.
-func (j *joinedCollection[O]) getInputMap(key string) map[int]O {
+func (j *mergedCollection[O]) getInputMap(key string) map[int]O {
 	if result, ok := j.inputs[key]; ok {
 		return result
 	}
@@ -203,8 +203,8 @@ func (j *joinedCollection[O]) getInputMap(key string) map[int]O {
 	return j.inputs[key]
 }
 
-func (j *joinedCollection[O]) GetKey(k string) *O {
-	if j.joiner == nil {
+func (j *mergedCollection[O]) GetKey(k string) *O {
+	if j.merger == nil {
 		// if collections are disjoint we can be lazy and stop early
 		for _, c := range j.collections {
 			if r := c.GetKey(k); r != nil {
@@ -223,11 +223,11 @@ func (j *joinedCollection[O]) GetKey(k string) *O {
 	return nil
 }
 
-func (j *joinedCollection[O]) List() []O {
+func (j *mergedCollection[O]) List() []O {
 	var res []O
 
-	// if no joiner was provided, collect and return results on-the-fly.
-	if j.joiner == nil {
+	// if no merger was provided, collect and return results on-the-fly.
+	if j.merger == nil {
 		first := true
 		for _, c := range j.collections {
 			objs := c.List()
@@ -248,7 +248,7 @@ func (j *joinedCollection[O]) List() []O {
 	return slices.Collect(maps.Values(j.outputs))
 }
 
-func (j *joinedCollection[O]) Register(f func(o Event[O])) Syncer {
+func (j *mergedCollection[O]) Register(f func(o Event[O])) Syncer {
 	return j.RegisterBatched(func(evs []Event[O]) {
 		for _, ev := range evs {
 			f(ev)
@@ -256,8 +256,8 @@ func (j *joinedCollection[O]) Register(f func(o Event[O])) Syncer {
 	}, true)
 }
 
-func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
-	if j.joiner == nil {
+func (j *mergedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
+	if j.merger == nil {
 		s := newMultiSyncer()
 		// TODO: handle deregistration
 		// register with each parent collection, and add to our list of collections waiting for sync.
@@ -290,7 +290,7 @@ func (j *joinedCollection[O]) RegisterBatched(f func(o []Event[O]), runExistingS
 	return p
 }
 
-func (j *joinedCollection[O]) snapshotInitialState() []Event[O] {
+func (j *mergedCollection[O]) snapshotInitialState() []Event[O] {
 	j.outMut.RLock()
 	defer j.outMut.RUnlock()
 
@@ -304,15 +304,15 @@ func (j *joinedCollection[O]) snapshotInitialState() []Event[O] {
 	return events
 }
 
-func (j *joinedCollection[O]) HasSynced() bool {
+func (j *mergedCollection[O]) HasSynced() bool {
 	return j.syncer.HasSynced()
 }
 
-func (j *joinedCollection[O]) WaitUntilSynced(stop <-chan struct{}) bool {
+func (j *mergedCollection[O]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return j.syncer.WaitUntilSynced(stop)
 }
 
-func (j *joinedCollection[O]) Index(e KeyExtractor[O]) Index[O] {
+func (j *mergedCollection[O]) Index(e KeyExtractor[O]) Index[O] {
 	idx := newIndex(j, e, func(oKeys map[key[O]]struct{}) []O {
 		j.outMut.RLock()
 		defer j.outMut.RUnlock()
