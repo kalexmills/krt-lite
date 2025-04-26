@@ -140,7 +140,7 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 	}
 
 	go func() {
-		c.WaitUntilSynced(c.stop) // wait for parent to sync before snapshotting and sending initial state
+		c.WaitUntilSynced(c.stop) // wait for collection to sync before snapshotting and sending initial state
 		p.send(c.snapshotInitialState(), true)
 	}()
 

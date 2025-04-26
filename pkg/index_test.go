@@ -46,7 +46,6 @@ func TestIndex(t *testing.T) {
 				})
 			},
 		},
-		// TODO: test MergeDisjoint once we have filtered collections.
 	}
 
 	for _, tt := range tests {

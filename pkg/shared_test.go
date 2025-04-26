@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	timeout      = time.Second * 5       // timeout is used for all Eventually and kontext.WithTimeout calls.
-	pollInterval = 50 * time.Millisecond // poll interval is used for all Eventually
+	timeout      = time.Second * 2      // timeout is used for all Eventually and context.WithTimeout calls.
+	pollInterval = 5 * time.Millisecond // poll interval is used for all Eventually
 )
 
 type SimplePod struct {
