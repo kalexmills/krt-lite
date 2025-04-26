@@ -3,6 +3,7 @@ package pkg_test
 import (
 	"fmt"
 	"k8s.io/apimachinery/pkg/labels"
+	"log/slog"
 	"reflect"
 	"slices"
 	"sort"
@@ -16,6 +17,10 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
+
+func init() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+}
 
 const (
 	timeout      = time.Second * 2      // timeout is used for all Eventually and context.WithTimeout calls.
