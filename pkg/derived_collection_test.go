@@ -13,6 +13,10 @@ import (
 	"testing"
 )
 
+func init() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+}
+
 type SimpleService struct {
 	Named
 	Selector map[string]string
@@ -127,8 +131,6 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 }
 
 func TestCollectionMerged(t *testing.T) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*5)
 	defer cancel()
 
@@ -139,10 +141,9 @@ func TestCollectionMerged(t *testing.T) {
 	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
 
 	SimplePods := SimplePodCollection(pods)
-	SimplePods.WaitUntilSynced(ctx.Done())
 	SimpleServices := SimpleServiceCollection(services)
-	SimpleServices.WaitUntilSynced(ctx.Done())
 	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+	SimpleEndpoints.WaitUntilSynced(ctx.Done())
 
 	assert.Empty(t, ListSorted(SimpleEndpoints))
 
@@ -208,7 +209,6 @@ func TestCollectionMerged(t *testing.T) {
 		SimpleEndpoint{pod2.Name, svc.Name, pod2.Namespace, pod2.Status.PodIP},
 		SimpleEndpoint{pod.Name, svc.Name, pod.Namespace, pod.Status.PodIP},
 	)
-	slog.SetLogLoggerLevel(slog.LevelWarn)
 }
 
 func TestCollectionDiamond(t *testing.T) {
@@ -401,7 +401,6 @@ func TestCollectionDiamond(t *testing.T) {
 }
 
 func TestDerivedCollectionMultipleFetch(t *testing.T) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -493,5 +492,4 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	assert.NoError(t, err)
 	assertEventuallyLabelsEqual()
 
-	slog.SetLogLoggerLevel(slog.LevelWarn)
 }
