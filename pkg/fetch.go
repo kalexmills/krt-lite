@@ -18,11 +18,11 @@ func (ctx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 
 		l.Debug("registering dependency")
 
-		syn.WaitUntilSynced(ctx.collection.stop)
+		syn.WaitUntilSynced(ctx.collection.stop) // wait until passed collection is synced.
 
 		ctx.collection.collectionDependencies[d.collectionID] = struct{}{}
 
-		register(func(anys []Event[any]) {
+		register(func(anys []Event[any]) { // register and wait for sync
 			l.Debug("pushing fetch events", "count", len(anys))
 			ctx.collection.pushFetchEvents(d.collectionID, anys)
 		}).WaitUntilSynced(ctx.collection.stop)

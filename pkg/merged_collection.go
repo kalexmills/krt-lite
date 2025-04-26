@@ -1,18 +1,19 @@
 package pkg
 
-// MergeIndexableDisjoint is identical to MergeDisjoint, except that the resulting collection is Indexable.
+// MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
+// collection. No guarantee is made regarding -- relying on this behavior is strongly discouraged.
+func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collection[T] {
+	return newMergedCollection(cs, opts)
+}
+
+// MergeIndexableDisjoint is identical to MergeDisjoint, except that the resulting collection is Indexable. Relies on
+// all parent collections being indexable.
 func MergeIndexableDisjoint[T any](cs []IndexableCollection[T], opts ...CollectionOption) IndexableCollection[T] {
 	var castCs []Collection[T]
 	for _, c := range cs {
 		castCs = append(castCs, c)
 	}
 	return newMergedCollection(castCs, opts)
-}
-
-// MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
-// collection. No guarantee is made regarding -- relying on this behavior is strongly discouraged.
-func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collection[T] {
-	return newMergedCollection(cs, opts)
 }
 
 // mergedCollection merges the results of several collections, all of which have the same type.

@@ -138,6 +138,7 @@ func TestCollectionMerged(t *testing.T) {
 	SimplePods := SimplePodCollection(pods)
 	SimpleServices := SimpleServiceCollection(services)
 	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+	SimpleEndpoints.WaitUntilSynced(ctx.Done())
 
 	assert.Empty(t, ListSorted(SimpleEndpoints))
 
@@ -395,6 +396,7 @@ func TestCollectionDiamond(t *testing.T) {
 }
 
 func TestDerivedCollectionMultipleFetch(t *testing.T) {
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -484,4 +486,5 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	err = cmClient.Delete(ctx, "foo1", metav1.DeleteOptions{})
 	assert.NoError(t, err)
 	assertEventuallyLabelsEqual()
+
 }
