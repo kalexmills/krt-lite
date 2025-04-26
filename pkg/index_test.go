@@ -46,7 +46,7 @@ func TestIndex(t *testing.T) {
 				})
 			},
 		},
-		// TODO: test Merger once we have filtered collections.
+		// TODO: test merger once we have filtered collections.
 	}
 
 	for _, tt := range tests {

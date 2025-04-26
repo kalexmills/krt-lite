@@ -7,11 +7,11 @@ import (
 	"sync"
 )
 
-// Merge merges multiple collections into one. Items with duplicate keys are combined using the provided Merger. Merger
+// merge merges multiple collections into one. Items with duplicate keys are combined using the provided merger. merger
 // will always be called with at least two inputs.
 //
-// Deprecated: currently broken; do not use (yet).
-func Merge[T any](cs []Collection[T], handler Merger[T], opts ...CollectionOption) IndexableCollection[T] {
+// TODO: currently broken -- does not pass conformance tests.
+func merge[T any](cs []Collection[T], handler merger[T], opts ...CollectionOption) IndexableCollection[T] {
 	return newMergedCollection(cs, handler, opts)
 }
 
@@ -25,13 +25,12 @@ func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Indexabl
 type mergedCollection[O any] struct {
 	collectionShared
 	collections []Collection[O]
-	merger      Merger[O]
+	merger      merger[O]
 	syncer      *multiSyncer
 	synced      chan struct{}
 	stop        chan struct{}
 
 	// TODO: this should be a good use-case for wrapping up a type-safe sync.Map instead of using global locks
-
 	// inputs tracks inputs for the same key and the collection they came from by index.
 	// e.g. if collections[3] associates "key" with "value", then inputs["key"][3] == "value"
 	inputs map[string]map[int]O
@@ -49,7 +48,7 @@ type mergedCollection[O any] struct {
 
 var _ Collection[any] = &mergedCollection[any]{}
 
-func newMergedCollection[O any](cs []Collection[O], merger Merger[O], opts []CollectionOption) *mergedCollection[O] {
+func newMergedCollection[O any](cs []Collection[O], merger merger[O], opts []CollectionOption) *mergedCollection[O] {
 	j := &mergedCollection[O]{
 		collectionShared: newCollectionShared(opts),
 		collections:      cs,
