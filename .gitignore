@@ -1,2 +1,4 @@
 .tool-versions
-.idea
+.idea/
+.vscode/
+cover.out

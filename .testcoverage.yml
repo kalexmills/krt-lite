@@ -1,0 +1,16 @@
+# Path to coverage profile file (output of `go test -coverprofile` command).
+profile: cover.out
+
+# Holds coverage thresholds percentages, values should be in range [0-100].
+threshold:
+  # Minimum coverage percentage required for individual files.
+  file: 50
+  # Minimum coverage percentage required for each package.
+  package: 70
+  # Minimum overall project coverage percentage required.
+  total: 70
+
+
+exclude:
+  paths:
+    - \.pb\.go$    # excludes all protobuf generated files

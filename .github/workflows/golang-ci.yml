@@ -35,7 +35,7 @@ jobs:
     strategy:
       matrix:
         golang-version: [ '1.24' ]
-
+    permissions: write-all
     steps:
       - uses: actions/checkout@v3
 
@@ -48,12 +48,10 @@ jobs:
       - name: Run tests
         run: make test-ci
 
-      - name: Update coverage report
-        uses: ncruces/go-coverage-report@v0
+      - name: check test coverage
+        uses: vladopajic/go-test-coverage@v2
         with:
-          report: true
-          chart: true
-          amend: true
-        if: |
-          matrix.os == 'ubuntu-latest'
-        continue-on-error: true
+          config: ./.testcoverage.yml
+          git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
+          git-branch: badges
+          debug: true

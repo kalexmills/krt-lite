@@ -39,7 +39,7 @@ test: ## Runs go test.
 
 .PHONY: test-ci
 test-ci:
-	@go test -failfast -race -count 10 -shuffle on -v ./...
+	@go test -coverprofile=cover.out -failfast -race -count 10 -shuffle on -v ./...
 
 .PHONY: bench
 bench: ## Runs go test with benchmarks.
