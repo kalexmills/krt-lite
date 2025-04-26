@@ -18,11 +18,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Golang
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.golang-version }}
           cache-dependency-path: "go.sum"
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -36,10 +38,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Golang
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.golang-version }}
           cache-dependency-path: "go.sum"
+
       - name: Run tests
         run: make test-ci
+
+      - name: Update coverage report
+        uses: ncruces/go-coverage-report@v0
+        with:
+          report: true
+          chart: true
+          amend: true
+        if: |
+          matrix.os == 'ubuntu-latest' &&
+          github.event_name == 'push'
+        continue-on-error: true
