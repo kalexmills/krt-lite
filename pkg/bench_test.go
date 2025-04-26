@@ -235,10 +235,3 @@ func GetIP() string {
 	nextIP = net.IPv4(v0, v1, v2, v3)
 	return ret
 }
-
-func drainN(c chan string, n int) {
-	for n > 0 {
-		n--
-		<-c
-	}
-}

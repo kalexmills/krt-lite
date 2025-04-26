@@ -86,20 +86,6 @@ func TestConformance(t *testing.T) {
 		rig := &staticRig{StaticCollection: col}
 		runConformance[Named](t, rig)
 	})
-	t.Run("merge", func(t *testing.T) {
-		t.Skip("TODO: fix this collection")
-		takeFirst := func(ns []Named) Named { return ns[0] }
-		ctx := t.Context()
-		col1 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
-		col2 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
-		j := krtlite.Merge[Named]([]krtlite.Collection[Named]{col1, col2}, takeFirst,
-			krtlite.WithStop(ctx.Done()), krtlite.WithName("Merge"))
-		rig := &mergeRig{
-			Collection: j,
-			inner:      [2]krtlite.StaticCollection[Named]{col1, col2},
-		}
-		runConformance[Named](t, rig)
-	})
 
 	t.Run("mergeDisjoint", func(t *testing.T) {
 		ctx := t.Context()

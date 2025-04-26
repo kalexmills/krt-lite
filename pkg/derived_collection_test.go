@@ -135,10 +135,6 @@ func TestCollectionMerged(t *testing.T) {
 	svcClient := c.CoreV1().Services("namespace")
 	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
 
-	// TODO: not waiting for informers to start causes messages to be dropped.
-	pods.WaitUntilSynced(ctx.Done())
-	services.WaitUntilSynced(ctx.Done())
-
 	SimplePods := SimplePodCollection(pods)
 	SimpleServices := SimpleServiceCollection(services)
 	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
@@ -398,7 +394,7 @@ func TestCollectionDiamond(t *testing.T) {
 	assert.Empty(t, ListSorted(PodSizeCounts))
 }
 
-func TestCollectionMultipleFetch(t *testing.T) {
+func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

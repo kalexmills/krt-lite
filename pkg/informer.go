@@ -113,7 +113,7 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	return &i
 }
 
-// informer knows how to turn a cache.SharedIndexInformer into a Collection[O].
+// informer knows how to turn a cache.SharedIndexInformer into a Collection[T].
 type informer[T runtime.Object] struct {
 	collectionShared
 	inf    cache.SharedIndexInformer

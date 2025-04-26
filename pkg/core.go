@@ -17,9 +17,6 @@ type (
 	// A FlatMapper maps its input to zero or more output values.
 	FlatMapper[I, O any] func(ctx Context, i I) []O
 
-	// A merger merges two or more inputs into one value. Mergers must be pure functions. TODO: enable once `merge` is ready for prime-time
-	merger[T any] func(ts []T) T
-
 	// A KeyExtractor is used to extract mapIndex keys from an object.
 	KeyExtractor[T any] func(t T) []string
 )

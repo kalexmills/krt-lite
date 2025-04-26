@@ -13,7 +13,7 @@ import (
 // in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
 // Collection.
 //
-// Panics will occur if an unsupported type for I or O is used, see GetKey for details.
+// Panics will occur if an unsupported type for I or T is used, see GetKey for details.
 func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	ff := func(ctx Context, i I) []O {
 		res := handler(ctx, i)
@@ -29,7 +29,7 @@ func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOpti
 // Collection c may result in zero or more items in the returned Collection. The returned Collection is kept in sync
 // with c. See Map for details.
 //
-// Panics will occur if an unsupported type of I or O are used, see GetKey for details.
+// Panics will occur if an unsupported type of I or T are used, see GetKey for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	res := newDerivedCollection(c, f, opts)
 	return res
@@ -443,7 +443,7 @@ type registrationHandler[T any] struct {
 	parentName string
 
 	handler func(o []T)
-	// each entry will be either []Event[O] or eventParentIsSynced{}
+	// each entry will be either []Event[T] or eventParentIsSynced{}
 	queue *fifo.Queue[any]
 
 	stopCh chan struct{}
