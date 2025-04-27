@@ -182,7 +182,7 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	assert.Len(t, col.List(), 3)
 
 	var keys []string
-	for n := range 20 {
+	for n := range 150 {
 		keys = append(keys, fmt.Sprintf("a/%v", n))
 	}
 

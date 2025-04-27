@@ -12,10 +12,10 @@ import (
 
 type (
 	// A Mapper maps its input to zero or one output values.
-	Mapper[I, O any] func(ctx Context, i I) *O
+	Mapper[I, O any] func(ktx Context, i I) *O
 
 	// A FlatMapper maps its input to zero or more output values.
-	FlatMapper[I, O any] func(ctx Context, i I) []O
+	FlatMapper[I, O any] func(ktx Context, i I) []O
 
 	// A KeyExtractor is used to extract mapIndex keys from an object.
 	KeyExtractor[T any] func(t T) []string

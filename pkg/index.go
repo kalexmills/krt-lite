@@ -46,6 +46,7 @@ func newIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchByKey
 }
 
 func (i *mapIndex[O]) handleEvents(events []Event[O]) {
+
 	i.mut.Lock()
 	defer i.mut.Unlock()
 	for _, ev := range events {

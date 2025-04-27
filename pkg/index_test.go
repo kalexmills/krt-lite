@@ -46,6 +46,24 @@ func TestIndex(t *testing.T) {
 				})
 			},
 		},
+		{
+			name: "StaticCollection", // TODO: fix test
+			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
+				var col krtlite.StaticCollection[*corev1.ConfigMap]
+				reg := inf.Register(func(o krtlite.Event[*corev1.ConfigMap]) {
+					t.Log("event", krtlite.GetKey(o.Latest()))
+					switch o.Event {
+					case krtlite.EventAdd, krtlite.EventUpdate:
+						col.Update(o.Latest())
+					case krtlite.EventDelete:
+						col.Delete(krtlite.GetKey(o.Latest()))
+					}
+				})
+				col = krtlite.NewStaticCollection[*corev1.ConfigMap](reg, nil)
+				return col
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -9,7 +9,7 @@ import (
 // A StaticCollection contains elements which are not derived from other Collections. It is intended to be used to tie
 // events from other systems into KRT.
 type StaticCollection[T any] interface {
-	Collection[T]
+	IndexableCollection[T]
 
 	// Update adds or updates an object.
 	Update(obj T)
@@ -27,13 +27,17 @@ type staticList[T any] struct {
 	stop   <-chan struct{}
 	syncer Syncer
 
+	indices []*mapIndex[T]
+
 	handlers map[*registrationHandler[Event[T]]]struct{}
 }
 
-// NewStaticCollection creates and returns a new StaticCollection containing the provided list of values. The Syncer
-// provided is used to determine when this StaticCollection has seen all of its initial state. Caller is responsible
-// for ensuring the the Syncer passed eventually syncs -- failing to do so will prevent downstream Collections from
-// starting.
+var _ StaticCollection[any] = &staticList[any]{}
+
+// NewStaticCollection creates and returns a new StaticCollection containing the provided list of values. If no Syncer
+// is provided, the collection starts as synced. Otherwise the Syncer provided is used to determine when this
+// StaticCollection has seen all of its initial state. Caller is responsible for ensuring the Syncer passed eventually
+// syncs -- failing to do so will prevent downstream Collections from starting.
 func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOption) StaticCollection[T] {
 	if synced == nil {
 		synced = alwaysSynced{}
@@ -50,7 +54,7 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 		res.vals[k] = t
 	}
 	return res
-}
+} // TODO: implement filtering
 
 func (s *staticList[T]) Register(f func(o Event[T])) Syncer {
 	return s.RegisterBatched(func(evs []Event[T]) {
@@ -120,6 +124,22 @@ func (s *staticList[T]) List() []T {
 	return slices.Collect(maps.Values(s.vals))
 }
 
+func (s *staticList[T]) Index(extractor KeyExtractor[T]) Index[T] { // TODO: test indexing.
+	idx := newIndex[T](s, extractor, func(m map[key[T]]struct{}) []T {
+		res := make([]T, 0, len(m))
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for key := range m {
+			if t, ok := s.vals[string(key)]; ok {
+				res = append(res, t)
+			}
+		}
+		return res
+	})
+	s.indices = append(s.indices, idx)
+	return idx
+}
+
 func (s *staticList[T]) Update(obj T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,6 +192,9 @@ func (s *staticList[T]) DeleteFunc(filter func(T) bool) {
 }
 
 func (s *staticList[T]) distributeEvents(evs []Event[T]) {
+	for _, h := range s.indices {
+		h.handleEvents(evs)
+	}
 	for h := range s.handlers {
 		h.send(evs, false)
 	}
