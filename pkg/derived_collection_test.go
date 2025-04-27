@@ -441,6 +441,8 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 		}
 	}, krtlite.WithName("Results"))
 
+	Results.WaitUntilSynced(ctx.Done())
+
 	assert.Empty(t, ListSorted(Results))
 
 	pod := &corev1.Pod{

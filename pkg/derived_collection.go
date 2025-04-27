@@ -53,7 +53,7 @@ type derivedCollection[I, O any] struct {
 	indices []*mapIndex[O]
 
 	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
-	registeredHandlers map[*registrationHandler[Event[O]]]struct{}
+	registeredHandlers map[*registrationHandler[O]]struct{}
 
 	parentReg Syncer
 
@@ -81,7 +81,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		idxMut:   &sync.RWMutex{},
 
 		regHandlerMut:      &sync.RWMutex{},
-		registeredHandlers: make(map[*registrationHandler[Event[O]]]struct{}),
+		registeredHandlers: make(map[*registrationHandler[O]]struct{}),
 
 		markSynced: &sync.Once{},
 		inputQueue: fifo.NewQueue[inputEvent[I]](1024),
@@ -118,7 +118,7 @@ func (c *derivedCollection[I, O]) List() []O {
 	return slices.Collect(maps.Values(c.outputs))
 }
 
-func (c *derivedCollection[I, O]) Register(f func(o Event[O])) Syncer {
+func (c *derivedCollection[I, O]) Register(f func(o Event[O])) Registration {
 	return c.RegisterBatched(func(events []Event[O]) {
 		for _, ev := range events {
 			f(ev)
@@ -126,8 +126,9 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) Syncer {
 	}, true)
 }
 
-func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Syncer {
+func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Registration {
 	p := newRegistrationHandler(c, f)
+	p.unregister = c.unregisterFunc(p)
 
 	c.regHandlerMut.Lock()
 	defer c.regHandlerMut.Unlock()
@@ -417,11 +418,19 @@ func (c *derivedCollection[I, O]) HasSynced() bool {
 	return c.syncer.HasSynced()
 }
 
-// newRegistrationHandler returns a registration handler, starting up the internal inputQueue.
-func newRegistrationHandler[O any](parent Collection[O], f func(o []Event[O])) *registrationHandler[Event[O]] {
-	h := &registrationHandler[Event[O]]{
-		parentName:      parent.getName(),
-		handler:         f,
+func (c *derivedCollection[I, O]) unregisterFunc(reg *registrationHandler[O]) func() {
+	return func() {
+		c.regHandlerMut.Lock()
+		defer c.regHandlerMut.Unlock()
+		delete(c.registeredHandlers, reg)
+	}
+}
+
+// newRegistrationHandler returns a registration handler nad starts up the internal inputQueue.
+func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[O])) *registrationHandler[O] {
+	h := &registrationHandler[O]{
+		parent:          parent,
+		handler:         handler,
 		queue:           fifo.NewQueue[any](1024),
 		stopCh:          make(chan struct{}),
 		syncedCh:        make(chan struct{}),
@@ -440,9 +449,9 @@ type eventParentIsSynced struct{}
 
 // registrationHandler handles a fifo.Queue of batched output events which are being sent to a registered component.
 type registrationHandler[T any] struct {
-	parentName string
+	parent Collection[T]
 
-	handler func(o []T)
+	handler func(o []Event[T])
 	// each entry will be either []Event[T] or eventParentIsSynced{}
 	queue *fifo.Queue[any]
 
@@ -451,6 +460,13 @@ type registrationHandler[T any] struct {
 	closeSyncedOnce *sync.Once
 	syncedCh        chan struct{}
 	syncer          *multiSyncer
+
+	unregister func()
+}
+
+func (p *registrationHandler[T]) Unregister() {
+	p.unregister()
+	close(p.stopCh)
 }
 
 func (p *registrationHandler[T]) markSynced() {
@@ -463,12 +479,11 @@ func (p *registrationHandler[T]) WaitUntilSynced(stop <-chan struct{}) bool {
 	return p.syncer.WaitUntilSynced(stop)
 }
 
-// HasSynced is true when the registrationHandler is synced.
 func (p *registrationHandler[T]) HasSynced() bool {
 	return p.syncer.HasSynced()
 }
 
-func (p *registrationHandler[T]) send(os []T, isInInitialList bool) {
+func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 	select {
 	case <-p.stopCh:
 		return
@@ -504,7 +519,7 @@ func (p *registrationHandler[O]) run() {
 				p.markSynced()
 				continue
 			}
-			next := fromQueue.([]O)
+			next := fromQueue.([]Event[O])
 			if len(next) > 0 {
 				p.handler(next)
 			}
@@ -516,7 +531,7 @@ type inputEvent[I any] struct {
 	header      byte
 	events      []Event[I]
 	sourceID    uint64
-	fetchEvents []Event[any] // TODO: clean this up by making it hold thunks.
+	fetchEvents []Event[any] // TODO(perf): lower memory footprint by making it hold thunks.
 }
 
 func inputEventParentIsSynced[I any]() inputEvent[I] {

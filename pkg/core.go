@@ -40,15 +40,15 @@ type EventStream[T any] interface {
 	//  * Each handler has its own unbounded event queue. Slow handlers may cause items to accumulate but will not
 	//    block other handlers.
 	//  * Events are delivered exactly once, in order.
-	Register(handler func(o Event[T])) Syncer
+	Register(handler func(o Event[T])) Registration
 
 	// RegisterBatched subscribes to this EventStream, the provided handler is called with batches of events. Events
 	// in successive batches are delivered in the order they occur. Events within a batch may or may not be in the
 	// order they occur, depending on the implementation.
 	//
 	// When runExistingState is true, the event stream snapshots current state and sends an add Event for every known
-	// item. The returned Syncer reports when all initial add events have been send.
-	RegisterBatched(handler func(o []Event[T]), runExistingState bool) Syncer
+	// item. The returned Registration reports when all initial add events have been sent.
+	RegisterBatched(handler func(o []Event[T]), runExistingState bool) Registration
 
 	// WaitUntilSynced blocks until this EventStream has received all initial state from upstream. If the provided
 	// channel is closed, this func returns false immediately. Returns true if and only if sync was successful.
@@ -73,6 +73,13 @@ type ComparableObject interface {
 
 	runtime.Object
 	comparable
+}
+
+type Registration interface {
+	Syncer
+	// Unregister unregisters this registration handler and cleans up any resources. Calling Unregister more than once
+	// will panic.
+	Unregister()
 }
 
 // Collection is a collection of objects whose changes can be subscribed to. Each item in a Collection is associated

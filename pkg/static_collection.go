@@ -29,7 +29,7 @@ type staticList[T any] struct {
 
 	indices []*mapIndex[T]
 
-	handlers map[*registrationHandler[Event[T]]]struct{}
+	handlers map[*registrationHandler[T]]struct{}
 }
 
 var _ StaticCollection[any] = &staticList[any]{}
@@ -47,7 +47,7 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 		vals:             make(map[string]T, len(vals)),
 		syncer:           synced,
 		stop:             make(chan struct{}),
-		handlers:         make(map[*registrationHandler[Event[T]]]struct{}),
+		handlers:         make(map[*registrationHandler[T]]struct{}),
 	}
 	for _, t := range vals {
 		k := GetKey(t)
@@ -56,7 +56,7 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 	return res
 } // TODO: implement filtering
 
-func (s *staticList[T]) Register(f func(o Event[T])) Syncer {
+func (s *staticList[T]) Register(f func(o Event[T])) Registration {
 	return s.RegisterBatched(func(evs []Event[T]) {
 		for _, ev := range evs {
 			f(ev)
@@ -64,8 +64,17 @@ func (s *staticList[T]) Register(f func(o Event[T])) Syncer {
 	}, true)
 }
 
-func (s *staticList[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Syncer {
+func (s *staticList[T]) unregisterFunc(h *registrationHandler[T]) func() {
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.handlers, h)
+	}
+}
+
+func (s *staticList[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Registration {
 	handler := newRegistrationHandler[T](s, f)
+	handler.unregister = s.unregisterFunc(handler)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

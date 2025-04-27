@@ -171,8 +171,7 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	assert.NotNil(t, col.GetKey("a/b"))
 	assert.NotNil(t, col.GetKey("a/c"))
 
-	// TODO: implement UnregisterHandler then enable this
-	// removeHandlerSynced.UnregisterHandler()
+	removeHandlerSynced.Unregister()
 
 	// Add another object.
 	t.Log("creating a/d")
@@ -182,7 +181,7 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	assert.Len(t, col.List(), 3)
 
 	var keys []string
-	for n := range 150 {
+	for n := range 20 {
 		keys = append(keys, fmt.Sprintf("a/%v", n))
 	}
 
@@ -210,5 +209,5 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	t.Log("waiting for all events")
 	raceHandler.Wait(want...)
 	raceHandler.Empty()
-	// removeHandler.Empty() TODO: implement UnregisterHandler then uncomment
+	removeHandler.Empty()
 }

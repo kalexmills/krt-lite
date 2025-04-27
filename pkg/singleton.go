@@ -23,7 +23,7 @@ type singleton[T any] struct {
 	currKey string
 
 	mut      *sync.RWMutex
-	handlers []func(o []Event[T])
+	handlers map[*func(o []Event[T])]struct{}
 }
 
 func newSingleton[T any](opts []CollectionOption) *singleton[T] {
@@ -32,6 +32,7 @@ func newSingleton[T any](opts []CollectionOption) *singleton[T] {
 		val:              atomic.Pointer[T]{},
 		synced:           atomic.Bool{},
 		mut:              new(sync.RWMutex),
+		handlers:         make(map[*func(o []Event[T])]struct{}),
 	}
 }
 
@@ -52,7 +53,7 @@ func (s *singleton[T]) List() []T {
 	return []T{*v}
 }
 
-func (s *singleton[T]) Register(f func(ev Event[T])) Syncer {
+func (s *singleton[T]) Register(f func(ev Event[T])) Registration {
 	return s.RegisterBatched(func(evs []Event[T]) {
 		for _, ev := range evs {
 			f(ev)
@@ -60,7 +61,7 @@ func (s *singleton[T]) Register(f func(ev Event[T])) Syncer {
 	}, true)
 }
 
-func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Syncer {
+func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Registration {
 	if runExistingState {
 		v := s.val.Load()
 		if v != nil {
@@ -73,8 +74,16 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 
 	s.mut.Lock()
 	defer s.mut.Unlock()
-	s.handlers = append(s.handlers, f)
-	return alwaysSynced{}
+	s.handlers[&f] = struct{}{}
+	return &singletonRegistration{unregister: s.unregister(&f)}
+}
+
+func (s *singleton[T]) unregister(f *func(o []Event[T])) func() {
+	return func() {
+		s.mut.Lock()
+		defer s.mut.Unlock()
+		delete(s.handlers, f)
+	}
 }
 
 func (s *singleton[T]) WaitUntilSynced(stop <-chan struct{}) bool {
@@ -118,11 +127,27 @@ func (s *singleton[T]) Set(now *T) {
 	}
 	s.mut.RLock()
 	defer s.mut.RUnlock()
-	for _, h := range s.handlers {
-		h([]Event[T]{ev})
+	for h := range s.handlers {
+		(*h)([]Event[T]{ev})
 	}
 }
 
 func (s *singleton[T]) MarkSynced() {
 	s.synced.Store(true)
+}
+
+type singletonRegistration struct {
+	unregister func()
+}
+
+func (s singletonRegistration) Unregister() {
+	s.unregister()
+}
+
+func (s singletonRegistration) WaitUntilSynced(stopCh <-chan struct{}) bool {
+	return true
+}
+
+func (s singletonRegistration) HasSynced() bool {
+	return true
 }

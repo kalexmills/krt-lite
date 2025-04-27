@@ -144,7 +144,7 @@ func (i *informer[T]) List() []T {
 	return res
 }
 
-func (i *informer[T]) Register(f func(ev Event[T])) Syncer {
+func (i *informer[T]) Register(f func(ev Event[T])) Registration {
 	reg, err := i.inf.AddEventHandler(eventHandler[T]{
 		handler: func(ev Event[T], syncing bool) {
 			f(ev)
@@ -154,10 +154,10 @@ func (i *informer[T]) Register(f func(ev Event[T])) Syncer {
 		i.logger().Error("error registering informer handler", "err", err)
 	}
 
-	return i.syncerForRegistration(reg)
+	return &informerRegistration[T]{parent: i, reg: reg}
 }
 
-func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Syncer {
+func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Registration {
 	reg, err := i.inf.AddEventHandler(eventHandler[T]{
 		handler: func(ev Event[T], syncing bool) {
 			f([]Event[T]{ev})
@@ -167,18 +167,7 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 		i.logger().Error("error registering informer event handler", "err", err)
 	}
 
-	return i.syncerForRegistration(reg)
-}
-
-func (i *informer[T]) syncerForRegistration(reg cache.ResourceEventHandlerRegistration) Syncer {
-	synced := make(chan struct{})
-	go func() {
-		cache.WaitForCacheSync(i.stop, reg.HasSynced) // TODO: there's a max of ~100ms on startup to be saved by polling ourselves.
-		i.logger().Debug("informer registration has synced")
-		close(synced)
-	}()
-
-	return newMultiSyncer(i, &channelSyncer{synced: synced})
+	return &informerRegistration[T]{parent: i, reg: reg}
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
@@ -321,4 +310,23 @@ func extract[T runtime.Object](obj any) *T {
 type TypedClient[TL runtime.Object] interface {
 	List(ctx context.Context, opts metav1.ListOptions) (TL, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
+}
+
+type informerRegistration[T runtime.Object] struct {
+	parent *informer[T]
+	reg    cache.ResourceEventHandlerRegistration
+}
+
+func (r *informerRegistration[T]) Unregister() {
+	if err := r.parent.inf.RemoveEventHandler(r.reg); err != nil {
+		r.parent.logger().Error("failed to remove eventHandler", "err", err)
+	}
+}
+
+func (r *informerRegistration[T]) WaitUntilSynced(stop <-chan struct{}) bool {
+	return cache.WaitForCacheSync(stop, r.reg.HasSynced)
+}
+
+func (r *informerRegistration[T]) HasSynced() bool {
+	return r.reg.HasSynced()
 }

@@ -294,6 +294,7 @@ func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObj
 }
 
 func AssertEventuallyDeepEquals[T any](t *testing.T, coll krtlite.Collection[T], expectedObjs ...T) {
+	t.Helper()
 	passed := assert.Eventually(t, func() bool {
 		return CollectionContentsDeepEquals(coll, expectedObjs...)
 	}, timeout, pollInterval)

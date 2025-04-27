@@ -35,13 +35,14 @@ func (ctx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 // Fetch calls List on the provided Collection, and can be used to subscribe Collections created by Map or FlatMap to
 // updates from additional collections. Passing a non-nil Context to Fetch subscribes the collection to updates from
 // Collection c. When no Context is passed, Fetch is equivalent to c.List().
-func Fetch[T any](ctx Context, c Collection[T]) []T {
-	if ctx != nil {
+func Fetch[T any](ktx Context, c Collection[T]) []T {
+	if ktx != nil {
 		d := &dependency{
 			collectionID:   c.getUID(),
 			collectionName: c.getName(),
 		}
-		ctx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
+
+		ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
 			ff := func(ts []Event[T]) {
 				// do type erasure to cast from T to any.
 				anys := make([]Event[any], len(ts))

@@ -82,7 +82,7 @@ func (m *mergedCollection[T]) List() []T {
 	return res
 }
 
-func (m *mergedCollection[T]) Register(f func(o Event[T])) Syncer {
+func (m *mergedCollection[T]) Register(f func(o Event[T])) Registration {
 	return m.RegisterBatched(func(evs []Event[T]) {
 		for _, ev := range evs {
 			f(ev)
@@ -90,15 +90,13 @@ func (m *mergedCollection[T]) Register(f func(o Event[T])) Syncer {
 	}, true)
 }
 
-func (m *mergedCollection[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Syncer {
-	s := newMultiSyncer()
-	// TODO: handle deregistration
+func (m *mergedCollection[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Registration {
+	r := &mergedRegistration{}
 	// register with each parent collection, and add to our list of collections waiting for sync.
 	for _, c := range m.collections {
-		reg := c.RegisterBatched(f, runExistingState)
-		s.syncers = append(s.syncers, reg)
+		r.registrations = append(r.registrations, c.RegisterBatched(f, runExistingState))
 	}
-	return s
+	return r
 }
 
 func (m *mergedCollection[T]) HasSynced() bool {
@@ -136,4 +134,33 @@ func (m mergedIndexer[T]) Lookup(key string) []T {
 		}
 	}
 	return res
+}
+
+type mergedRegistration struct {
+	registrations []Registration // must not be modified after first use.
+	syncer        *multiSyncer   // syncer formed from registrations; lazily initialized.
+}
+
+func (m *mergedRegistration) Unregister() {
+	for _, r := range m.registrations {
+		r.Unregister()
+	}
+}
+
+func (m *mergedRegistration) WaitUntilSynced(stop <-chan struct{}) bool {
+	return m.getSyncer().WaitUntilSynced(stop)
+}
+
+func (m *mergedRegistration) HasSynced() bool {
+	return m.getSyncer().HasSynced()
+}
+
+func (m *mergedRegistration) getSyncer() *multiSyncer {
+	if m.syncer == nil {
+		m.syncer = newMultiSyncer()
+		for _, r := range m.registrations {
+			m.syncer.syncers = append(m.syncer.syncers, r)
+		}
+	}
+	return m.syncer
 }
