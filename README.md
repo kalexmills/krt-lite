@@ -7,8 +7,6 @@
 
 istio/krt, without Istio.
 
-*** WORK IN PROGRESS ***
-
 ## Why KRT?
 
 Writing Kubernetes controllers is easier when you can:
@@ -17,8 +15,8 @@ Writing Kubernetes controllers is easier when you can:
 - Handle incoming events from sources other than Kubernetes.
 
 ## Roadmap
-- [X] Joiner -- joining collections into one.
-  - [ ] Conformance tests.
+- [X] JoinDisjoint -- joining collections into one.
+  - [X] Conformance tests.
 - [X] StaticCollection -- collections that don't change
 - [X] Indexer -- indexing an existing collection for quicker lookup.
 - [X] Fetch -- fetching from a collection and tracking dependencies.
