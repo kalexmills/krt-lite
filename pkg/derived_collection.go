@@ -1,8 +1,10 @@
 package pkg
 
 import (
+	"github.com/kalexmills/krt-lite/pkg/bimap"
 	"github.com/kalexmills/krt-lite/pkg/fifo"
 	"k8s.io/utils/ptr"
+	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -63,9 +65,16 @@ type derivedCollection[I, O any] struct {
 
 	collectionDependencies map[uint64]struct{}            // keyed list of collections w/ dependencies added via fetch
 	dependencies           map[key[I]][]*dependency       // dependencies by input key
-	depsBySourceID         map[uint64]map[key[I]]struct{} // maps from source ID to a set of input keys
+	depKeysByCollectionID  map[uint64]map[key[I]]struct{} // maps from source ID to a set of input keys
+
+	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys from Fetch dependencies.
 
 	inputQueue *fifo.Queue[inputEvent[I]]
+}
+
+type depKey struct {
+	depID uint64
+	key   string
 }
 
 func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectionOption) *derivedCollection[I, O] {
@@ -88,7 +97,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 
 		collectionDependencies: make(map[uint64]struct{}),
 		dependencies:           make(map[key[I]][]*dependency),
-		depsBySourceID:         make(map[uint64]map[key[I]]struct{}),
+		depMap:                 bimap.New[key[I], depKey](),
 
 		syncedCh: make(chan struct{}),
 	}
@@ -195,8 +204,8 @@ func (c *derivedCollection[I, O]) run() {
 	c.processInputQueue()
 }
 
-func (c *derivedCollection[I, O]) pushFetchEvents(sourceID uint64, events []Event[any]) {
-	c.inputQueue.In() <- fetchEvents[I](sourceID, events)
+func (c *derivedCollection[I, O]) pushFetchEvents(d *dependency, events []Event[any]) {
+	c.inputQueue.In() <- fetchEvents[I](d, events)
 }
 
 func (c *derivedCollection[I, O]) processInputQueue() {
@@ -211,8 +220,8 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 				continue
 			}
 			if input.IsFetchEvents() {
-				c.logger().Debug("received fetch events", "fromCollectionID", input.sourceID)
-				c.handleFetchEvents(input.sourceID, input.fetchEvents)
+				c.logger().Debug("received fetch events", "fromCollectionID", input.dependency.collectionID)
+				c.handleFetchEvents(input.dependency, input.fetchEvents)
 				continue
 			}
 
@@ -332,9 +341,10 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 	}
 }
 
-func (c *derivedCollection[I, O]) handleFetchEvents(sourceID uint64, events []Event[any]) {
-	changedKeys, ok := c.depsBySourceID[sourceID]
-	if !ok {
+func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, events []Event[any]) {
+	changedKeys := c.changedKeys(dependency, events)
+	if len(changedKeys) == 0 {
+		slog.Debug("NO KEYS CHANGED", "events", events, "dependency", dependency)
 		return
 	}
 
@@ -371,29 +381,48 @@ func (c *derivedCollection[I, O]) handleFetchEvents(sourceID uint64, events []Ev
 	c.handleEvents(res)
 }
 
+func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[any]) map[key[I]]struct{} {
+	// search through the depMap mapping for an index... if none, check everything.
+	result := make(map[key[I]]struct{})
+	for _, ev := range events {
+		found := false
+		for _, item := range ev.Items() {
+			key := GetKey[any](item)
+			for iKey := range c.depMap.GetUs(depKey{depID: dep.depID, key: key}) {
+				found = true
+				result[iKey] = struct{}{}
+			}
+		}
+		if !found {
+			for iKey, depsForKey := range c.dependencies {
+				for _, depForKey := range depsForKey {
+					for _, item := range ev.Items() {
+						if depForKey.Matches(item) {
+							result[iKey] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+	return result
+}
+
 // dependencyUpdate updates dependency state. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, O]) {
-	// without filtering or FetchOne, every dependency change requires a recomputation
 	c.dependencies[iKey] = ktx.dependencies
 	for _, dep := range ktx.dependencies {
-		if _, ok := c.depsBySourceID[dep.collectionID]; !ok {
-			c.depsBySourceID[dep.collectionID] = make(map[key[I]]struct{})
+		// update tracking by sourceKey
+		for _, k := range ktx.trackedKeys {
+			c.depMap.Add(iKey, depKey{depID: dep.depID, key: k})
 		}
-		c.depsBySourceID[dep.collectionID][iKey] = struct{}{}
 	}
 }
 
 // dependencyDelete deletes a dependency. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyDelete(iKey key[I]) {
-	if deps, ok := c.dependencies[iKey]; ok {
-		for _, dep := range deps {
-			delete(c.depsBySourceID[dep.collectionID], iKey)
-			if len(c.depsBySourceID[dep.collectionID]) == 0 {
-				delete(c.depsBySourceID, dep.collectionID)
-			}
-		}
-		delete(c.dependencies, iKey)
-	}
+	delete(c.dependencies, iKey)
+	c.depMap.RemoveU(iKey)
 }
 
 func (c *derivedCollection[I, O]) snapshotInitialState() []Event[O] {
@@ -530,7 +559,7 @@ func (p *registrationHandler[O]) run() {
 type inputEvent[I any] struct {
 	header      byte
 	events      []Event[I]
-	sourceID    uint64
+	dependency  *dependency
 	fetchEvents []Event[any] // TODO(perf): lower memory footprint by making it hold thunks.
 }
 
@@ -542,8 +571,8 @@ func inputEvents[I any](events []Event[I]) inputEvent[I] {
 	return inputEvent[I]{events: events}
 }
 
-func fetchEvents[I any](sourceID uint64, events []Event[any]) inputEvent[I] {
-	return inputEvent[I]{header: isFetchEvents, fetchEvents: events, sourceID: sourceID}
+func fetchEvents[I any](d *dependency, events []Event[any]) inputEvent[I] {
+	return inputEvent[I]{header: isFetchEvents, fetchEvents: events, dependency: d}
 }
 
 // IsParentIsSynced means this event indicates the parent is synced. No events accompany this message.

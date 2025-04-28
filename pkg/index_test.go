@@ -47,7 +47,7 @@ func TestIndex(t *testing.T) {
 			},
 		},
 		{
-			name: "StaticCollection", // TODO: fix test
+			name: "StaticCollection",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
 				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
 				var col krtlite.StaticCollection[*corev1.ConfigMap]

@@ -137,6 +137,9 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 func BenchmarkController(b *testing.B) {
 	watch.DefaultChanSize = 100_000
 	benchmark := func(b *testing.B, fn func(b *testing.B, events chan string) (Client, func())) {
+		slogLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
+		defer slog.SetLogLoggerLevel(slogLevel)
+
 		b.Logf("starting controller")
 		var initialPods []*corev1.Pod
 		for i := 0; i < 1000; i++ {

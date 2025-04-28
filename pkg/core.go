@@ -133,7 +133,7 @@ func (c collectionShared) logger() *slog.Logger {
 
 func newCollectionShared(options []CollectionOption) collectionShared {
 	meta := &collectionShared{
-		uid:  nextUID(),
+		uid:  nextCollectionUID(),
 		stop: make(chan struct{}),
 	}
 	for _, option := range options {
@@ -142,7 +142,11 @@ func newCollectionShared(options []CollectionOption) collectionShared {
 	return *meta
 }
 
+// A CollectionOption specifies optional ways collections may behave.
 type CollectionOption func(m *collectionShared)
+
+// A FetchOption modifies how calls to Fetch work.
+type FetchOption func(m *dependency)
 
 // EventType describes an event which mutates a collection.
 type EventType int
@@ -206,10 +210,21 @@ func (e Event[T]) Items() []T {
 
 type key[O any] string
 
-var globalUIDCounter = atomic.Uint64{}
+var globalCollectionUIDCounter = atomic.Uint64{}
 
-func nextUID() uint64 {
-	return globalUIDCounter.Add(1)
+func nextCollectionUID() uint64 {
+	return globalCollectionUIDCounter.Add(1)
+}
+
+var globalDependencyUIDCounter = atomic.Uint64{}
+
+func nextDependencyUID() uint64 {
+	return globalDependencyUIDCounter.Add(1)
+}
+
+// Keyer is implemented by any type which can have a key.
+type Keyer interface {
+	Key() string
 }
 
 // GetKey infers a string key for the passed in value. Panics if its argument is not one of the following types.
@@ -229,9 +244,18 @@ func GetKey[O any](o O) string {
 	panic(fmt.Sprintf("Cannot get key, got %T", o))
 }
 
-// Keyer is implemented by any type which can have a key.
-type Keyer interface {
-	Key() string
+// Labeler is implemented by any type which can have labels.
+type Labeler interface {
+	GetLabels() map[string]string
+}
+
+func getLabels(obj any) map[string]string {
+	switch typed := obj.(type) {
+	case Labeler:
+		return typed.GetLabels()
+	default:
+		panic(fmt.Sprintf("Cannot get labels, got %T", obj))
+	}
 }
 
 func getTypedKey[O any](o O) key[O] {
