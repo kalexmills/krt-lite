@@ -26,7 +26,7 @@ SOFTWARE.
 NOTE: This file copied from github.com/eapache/queue/v2 -- modifications have been made.
 */
 
-package fifo
+package fifo //nolint: testpackage // needs private
 
 import "testing"
 

@@ -25,7 +25,7 @@ type (
 // EventStream describes a source of state changes for items of type T. Components can register to an event stream to
 // subscribe to updates.
 //
-// An EventStream is synced when it has received an EventAdd notification for every item
+// An EventStream is synced when it has received an EventAdd notification for every item.
 type EventStream[T any] interface {
 
 	// Register subscribes to this EventStream, ensuring the handler is called exactly once for every event. The caller

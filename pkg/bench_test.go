@@ -20,10 +20,6 @@ import (
 	"testing"
 )
 
-func init() {
-	slog.SetLogLoggerLevel(slog.LevelError)
-}
-
 type Workload struct {
 	Named
 	ServiceNames []string
@@ -102,7 +98,7 @@ func (k *krtliteWrapper) UpdatePod(ctx context.Context, pod *corev1.Pod) {
 }
 
 func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
-	ctx := context.Background()
+	ctx := b.Context()
 
 	c := fake.NewFakeClient()
 	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c, krtlite.WithName("Pods"))

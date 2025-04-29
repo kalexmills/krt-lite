@@ -9,7 +9,7 @@ func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collecti
 // MergeIndexableDisjoint is identical to MergeDisjoint, except that the resulting collection is Indexable. Relies on
 // all parent collections being indexable.
 func MergeIndexableDisjoint[T any](cs []IndexableCollection[T], opts ...CollectionOption) IndexableCollection[T] {
-	var castCs []Collection[T]
+	castCs := make([]Collection[T], 0, len(cs))
 	for _, c := range cs {
 		castCs = append(castCs, c)
 	}
@@ -40,7 +40,7 @@ func newMergedCollection[O any](cs []Collection[O], opts []CollectionOption) *me
 	return j
 }
 
-// init registers this mergedCollection with its parents and handles sync
+// init registers this mergedCollection with its parents and handles sync.
 func (m *mergedCollection[T]) init() {
 	defer close(m.synced)
 
@@ -136,7 +136,7 @@ func (m mergedIndexer[T]) Lookup(key string) []T {
 	return res
 }
 
-func (m mergedIndexer[T]) objectHasKey(t T, key string) bool {
+func (m mergedIndexer[T]) objectHasKey(t T, key string) bool { //nolint: unused // for interface
 	for _, i := range m.indexers {
 		if i.objectHasKey(t, key) {
 			return true

@@ -14,12 +14,8 @@ import (
 	"testing"
 )
 
-//func init() {
-//	slog.SetLogLoggerLevel(slog.LevelDebug)
-//}
-
 func TestRegistrationSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	t.Run("informer", func(t *testing.T) {
@@ -95,7 +91,7 @@ func doTest[T any](t *testing.T, ctx context.Context, collection krtlite.Collect
 		if gotEvent.Add(1) > 0 {
 			return // we only assert on the first event
 		}
-		assert.Equal(t, false, reg.HasSynced(), "expected register handler to run at least once before sync")
+		assert.False(t, reg.HasSynced(), "expected register handler to run at least once before sync")
 	}, true)
 	reg = reg1Delayed
 	startSync.Done()

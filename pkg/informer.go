@@ -27,7 +27,7 @@ func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, 
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			tl := PT(new(TL))
 			if err := c.List(ctx, tl, metaOptionsToCtrlOptions(options)...); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("error calling list: %w", err)
 			}
 			return tl, nil
 		},
@@ -35,14 +35,14 @@ func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, 
 			tl := PT(new(TL))
 			wl, err := c.Watch(ctx, tl, metaOptionsToCtrlOptions(options)...)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("error starting watch: %w", err)
 			}
 			return wl, nil
 		},
 	}, opts...)
 }
 
-// ptrTL exists to allow pointers to be instantiated
+// ptrTL exists to allow pointers to be instantiated.
 type ptrTL[T any] interface {
 	*T
 	client.ObjectList
@@ -249,14 +249,14 @@ func (i *informerIndexer[T]) Lookup(key string) []T {
 	if err != nil {
 		slog.Error("indexer failed to perform key lookup", "err", err, "key", key, "parentName", i.parentName)
 	}
-	var result []T
+	result := make([]T, 0, len(res))
 	for _, obj := range res {
 		result = append(result, obj.(T))
 	}
 	return result
 }
 
-func (i *informerIndexer[T]) objectHasKey(t T, key string) bool {
+func (i *informerIndexer[T]) objectHasKey(t T, key string) bool { //nolint: unused // for interface
 	for _, got := range i.extractor(t) {
 		if got == key {
 			return true
@@ -321,7 +321,7 @@ func extractRuntimeObject[T runtime.Object](obj any) *T {
 }
 
 // TypedClient is an interface implemented by typed Kubernetes clientsets. TL denotes the type of a list kind, e.g.
-// *corev1.PodList
+// *corev1.PodList.
 type TypedClient[TL runtime.Object] interface {
 	List(ctx context.Context, opts metav1.ListOptions) (TL, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)

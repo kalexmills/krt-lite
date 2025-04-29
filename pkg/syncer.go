@@ -105,7 +105,7 @@ func (s channelSyncer) HasSynced() bool {
 }
 
 // idSyncer is a bit like a waitgroup.
-type idSyncer struct { // nolint:unused // May be used by Join
+type idSyncer struct { //nolint:unused // May be used by Join
 	count   *atomic.Int64
 	indices *sync.Map
 	synced  chan struct{}

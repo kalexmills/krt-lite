@@ -67,8 +67,8 @@ func (q *ringbuf[V]) Cap() int {
 	return cap(q.buf)
 }
 
-// resizes the ringbuf to fit exactly twice its current contents
-// this can result in shrinking if the ringbuf is less than half-full
+// resizes the ringbuf to fit exactly twice its current contents.
+// this can result in shrinking if the ringbuf is less than half-full.
 func (q *ringbuf[V]) resize() {
 	newBuf := make([]*V, q.count<<1)
 

@@ -49,7 +49,7 @@ func TestMergeDisjoint(t *testing.T) {
 }
 
 func TestMergeDisjointSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset(

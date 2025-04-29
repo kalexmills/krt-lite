@@ -16,7 +16,7 @@ import (
 )
 
 func TestNewInformer(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset()
@@ -50,15 +50,15 @@ func TestNewInformer(t *testing.T) {
 	}
 
 	_, err := cmClient.Create(ctx, cmA, metav1.CreateOptions{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tt.Wait("add/ns/a")
 
 	cmA2, err = cmClient.Update(ctx, cmA2, metav1.UpdateOptions{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tt.Wait("update/ns/a")
 
 	cmB, err = cmClient.Create(ctx, cmB, metav1.CreateOptions{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tt.Wait("add/ns/b")
 
 	assert.True(t, CollectionKeysMatch(ConfigMaps, "ns/a", "ns/b")())
@@ -71,12 +71,12 @@ func TestNewInformer(t *testing.T) {
 	tt2.Wait("add/ns/a", "add/ns/b")
 
 	err = c.CoreV1().ConfigMaps("ns").Delete(ctx, cmB.Name, metav1.DeleteOptions{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tt2.Wait("delete/ns/b")
 }
 
 func TestInformerSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	c := fake.NewClientset(&corev1.ConfigMap{
@@ -96,7 +96,7 @@ func TestInformerSync(t *testing.T) {
 	startSync.Add(1)
 	reg1Delayed := ConfigMaps.Register(func(o krtlite.Event[*corev1.ConfigMap]) {
 		startSync.Wait()
-		assert.Equal(t, false, reg.HasSynced())
+		assert.False(t, reg.HasSynced())
 		gotEvent.Store(true)
 	})
 	reg = reg1Delayed // satisfy race detector
@@ -105,5 +105,5 @@ func TestInformerSync(t *testing.T) {
 	ok := cache.WaitForCacheSync(ctx.Done(), reg.HasSynced)
 	require.True(t, ok)
 
-	assert.EqualValues(t, true, gotEvent.Load())
+	assert.True(t, gotEvent.Load())
 }

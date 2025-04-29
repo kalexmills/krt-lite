@@ -99,7 +99,7 @@ func (s *staticList[T]) RegisterBatched(f func(o []Event[T]), runExistingState b
 func (s *staticList[T]) snapshotInitialState() []Event[T] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var evs []Event[T]
+	evs := make([]Event[T], 0, len(s.vals))
 	for _, v := range s.vals {
 		evs = append(evs, Event[T]{
 			New:   &v,

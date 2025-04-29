@@ -1,7 +1,8 @@
-package fifo
+package fifo_test
 
 import (
 	"fmt"
+	"github.com/kalexmills/krt-lite/pkg/fifo"
 	"sync"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func test(t *testing.T, inDelay, outDelay time.Duration) {
 	stop := make(chan struct{})
 	defer close(stop)
 
-	q := NewQueue[int](16)
+	q := fifo.NewQueue[int](16)
 	lastVal := -1
 
 	q.Run(stop)
@@ -64,7 +65,7 @@ func BenchmarkQueue_Send(b *testing.B) {
 	stop := make(chan struct{})
 	defer close(stop)
 
-	q := NewQueue[int](1024)
+	q := fifo.NewQueue[int](1024)
 	q.Run(stop)
 
 	var wg sync.WaitGroup
@@ -88,7 +89,7 @@ func BenchmarkQueue_Send(b *testing.B) {
 func BenchmarkQueue_Receive(b *testing.B) {
 	stop := make(chan struct{})
 
-	q := NewQueue[int](1024)
+	q := fifo.NewQueue[int](1024)
 	q.Run(stop)
 
 	var wg sync.WaitGroup

@@ -48,7 +48,6 @@ func newMapIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchBy
 }
 
 func (i *mapIndex[T]) handleEvents(events []Event[T]) {
-
 	i.mut.Lock()
 	defer i.mut.Unlock()
 	for _, ev := range events {
@@ -85,7 +84,7 @@ func (i *mapIndex[T]) Lookup(key string) []T {
 	return i.fetchByKeys(oKeys)
 }
 
-func (i *mapIndex[T]) objectHasKey(t T, key string) bool {
+func (i *mapIndex[T]) objectHasKey(t T, key string) bool { //nolint: unused // for interface
 	for _, got := range i.extractor(t) {
 		if got == key {
 			return true

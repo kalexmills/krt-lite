@@ -286,7 +286,6 @@ func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObj
 	}
 	for i, obj := range expectedObjs {
 		if !reflect.DeepEqual(obj, listed[i]) {
-
 			return false
 		}
 	}

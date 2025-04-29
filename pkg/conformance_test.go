@@ -125,7 +125,7 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	ctx := t.Context()
 	stop := t.Context().Done()
 
-	assert.Equal(t, len(col.List()), 0)
+	assert.Empty(t, col.List())
 
 	// Register a handler at the start of the collection
 	t.Log("registering early handler")
@@ -133,14 +133,14 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	earlyHandlerSynced := col.Register(earlyHandler.Track)
 
 	// Ensure collection and handler are synced
-	assert.Equal(t, true, col.WaitUntilSynced(stop))
-	assert.Equal(t, true, earlyHandlerSynced.WaitUntilSynced(stop))
+	assert.True(t, col.WaitUntilSynced(stop))
+	assert.True(t, earlyHandlerSynced.WaitUntilSynced(stop))
 
 	// Create an object
 	t.Log("creating a/b")
 	col.CreateObject(ctx, "a/b")
 	earlyHandler.Wait("add/a/b")
-	assert.Equal(t, 1, len(col.List()))
+	assert.Len(t, col.List(), 1)
 	assert.NotNil(t, col.GetKey("a/b"))
 
 	// Now register one later
@@ -180,7 +180,7 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	lateHandler.Wait("add/a/d")
 	assert.Len(t, col.List(), 3)
 
-	var keys []string
+	keys := make([]string, 0, 20)
 	for n := range 20 {
 		keys = append(keys, fmt.Sprintf("a/%v", n))
 	}
@@ -193,13 +193,13 @@ func runConformance[T any](t *testing.T, col Rig[T]) {
 	}()
 
 	// Introduce jitter to ensure we don't register first
-	// nolint: gosec // just for testing
+	//nolint: gosec // just for testing
 	time.Sleep(time.Microsecond * time.Duration(rand.Int31n(100)))
 
 	t.Log("registering race handler")
 	raceHandler := NewTracker[T](t)
 	raceHandlerSynced := col.Register(raceHandler.Track)
-	assert.Equal(t, true, raceHandlerSynced.WaitUntilSynced(stop))
+	assert.True(t, raceHandlerSynced.WaitUntilSynced(stop))
 
 	want := []string{"add/a/b", "add/a/c", "add/a/d"}
 	for _, k := range keys {

@@ -62,9 +62,8 @@ type derivedCollection[I, O any] struct {
 	syncedCh   chan struct{}
 	syncer     *multiSyncer
 
-	collectionDependencies map[uint64]struct{}            // keyed list of collections w/ dependencies added via fetch
-	dependencies           map[key[I]][]*dependency       // dependencies by input key
-	depKeysByCollectionID  map[uint64]map[key[I]]struct{} // maps from source ID to a set of input keys
+	collectionDependencies map[uint64]struct{}      // keyed list of collections w/ dependencies added via fetch
+	dependencies           map[key[I]][]*dependency // dependencies by input key
 
 	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys from Fetch dependencies.
 
@@ -583,7 +582,7 @@ func (e *inputEvent[I]) IsParentIsSynced() bool {
 	return (e.header & parentIsSynced) > 0
 }
 
-// IsFetchEvents means this event contains only fetch events
+// IsFetchEvents means this event contains only fetch events.
 func (e *inputEvent[I]) IsFetchEvents() bool {
 	return (e.header & isFetchEvents) > 0
 }

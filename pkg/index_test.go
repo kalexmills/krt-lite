@@ -2,6 +2,7 @@ package pkg_test
 
 import (
 	"context"
+	"github.com/stretchr/testify/require"
 	"maps"
 	"slices"
 	"testing"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestIndex(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	tests := []struct {
@@ -67,7 +68,6 @@ func TestIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			c := fake.NewClientset()
 			cmClient := c.CoreV1().ConfigMaps("ns")
 
@@ -117,31 +117,31 @@ func TestIndex(t *testing.T) {
 			}
 
 			cmA, err := cmClient.Create(ctx, cmA, metav1.CreateOptions{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmA}, lookup("shared-ab"))
 
 			cmC, err = cmClient.Create(ctx, cmC, metav1.CreateOptions{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmA}, lookup("shared-ab"))
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmC}, lookup("shared-bc"))
 
 			cmB, err = cmClient.Create(ctx, cmB, metav1.CreateOptions{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmA, cmB}, lookup("shared-ab"))
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmC}, lookup("shared-bc"))
 
 			cmB.Data["shared-bc"] = "data"
 			cmB, err = cmClient.Update(ctx, cmB, metav1.UpdateOptions{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmA, cmB}, lookup("shared-ab"))
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmB, cmC}, lookup("shared-bc"))
 
 			err = cmClient.Delete(ctx, cmB.Name, metav1.DeleteOptions{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmA}, lookup("shared-ab"))
 			AssertEventuallyEqual(t, []*corev1.ConfigMap{cmC}, lookup("shared-bc"))

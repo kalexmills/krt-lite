@@ -4,7 +4,45 @@ linters:
     govet:
       enable:
         - loopclosure
+    gocritic:
+      disabled-tags:
+        - style
+    godot:
+      scope: declarations
   enable:
     - gosec
     - errorlint
+    - dupword
     - govet
+    - exhaustive
+    - fatcontext
+    - dupl
+    - goconst
+    - gocritic
+    - godot
+    - goprintffuncname
+    - iface
+    - importas
+    - makezero
+    - misspell
+    - nakedret
+    - nilerr
+    - nilnil
+    - nolintlint
+    - perfsprint
+    - prealloc
+    - predeclared
+    - reassign
+    - recvcheck
+    - sloglint
+    - tagliatelle
+    - testableexamples
+    - testifylint
+    - testpackage
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - wrapcheck
+    - whitespace
