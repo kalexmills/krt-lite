@@ -136,6 +136,15 @@ func (m mergedIndexer[T]) Lookup(key string) []T {
 	return res
 }
 
+func (m mergedIndexer[T]) objectHasKey(t T, key string) bool {
+	for _, i := range m.indexers {
+		if i.objectHasKey(t, key) {
+			return true
+		}
+	}
+	return false
+}
+
 type mergedRegistration struct {
 	registrations []Registration // must not be modified after first use.
 	syncer        *multiSyncer   // syncer formed from registrations; lazily initialized.

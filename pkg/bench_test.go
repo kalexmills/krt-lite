@@ -102,22 +102,25 @@ func (k *krtliteWrapper) UpdatePod(ctx context.Context, pod *corev1.Pod) {
 }
 
 func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
-	ctx := b.Context()
+	ctx := context.Background()
 
 	c := fake.NewFakeClient()
 	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c, krtlite.WithName("Pods"))
 	Services := krtlite.NewInformer[*corev1.Service, corev1.ServiceList](ctx, c, krtlite.WithName("Services"))
 	ServicesByNamespace := krtlite.NewNamespaceIndex(Services)
 
-	Workloads := krtlite.Map(Pods, func(ctx krtlite.Context, p *corev1.Pod) *Workload {
+	Workloads := krtlite.Map(Pods, func(ktx krtlite.Context, p *corev1.Pod) *Workload {
 		if p.Status.PodIP == "" {
 			return nil
 		}
-		services := ServicesByNamespace.Lookup(p.Namespace) // TODO: use a filter
+
+		services := krtlite.Fetch(ktx, Services, krtlite.MatchIndex(ServicesByNamespace, p.Namespace),
+			krtlite.MatchSelectsLabels(p.Labels, krtlite.LabelSelectorExtractor))
 		result := &Workload{
 			Named: NewNamed(p),
 			IP:    p.Status.PodIP,
 		}
+
 		for _, service := range services {
 			if labels.Set(service.Labels).AsSelector().Matches(labels.Set(p.Labels)) {
 				result.ServiceNames = append(result.ServiceNames, service.Name)
@@ -129,12 +132,13 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Event)
 	})
 	return &krtliteWrapper{client: c}, func() {
-		Pods.WaitUntilSynced(ctx.Done())
-		Services.WaitUntilSynced(ctx.Done())
+		Workloads.WaitUntilSynced(ctx.Done())
 	}
 }
 
 func BenchmarkController(b *testing.B) {
+	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
+	defer slog.SetLogLoggerLevel(oldLevel)
 	watch.DefaultChanSize = 100_000
 	benchmark := func(b *testing.B, fn func(b *testing.B, events chan string) (Client, func())) {
 		slogLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
@@ -176,7 +180,7 @@ func BenchmarkController(b *testing.B) {
 		}
 
 		ctx := b.Context()
-		events := make(chan string, 1_000_000)
+		events := make(chan string, 1000)
 
 		c, wait := fn(b, events)
 		for _, pod := range initialPods {
@@ -207,6 +211,7 @@ func BenchmarkController(b *testing.B) {
 					},
 				})
 			}
+			drainN(events, 1000)
 		}
 		b.Log("events left in channel:", len(events))
 	}
@@ -222,6 +227,13 @@ type Client interface {
 	CreatePod(ctx context.Context, pod *corev1.Pod)
 	CreateService(ctx context.Context, svc *corev1.Service)
 	UpdatePod(ctx context.Context, pod *corev1.Pod)
+}
+
+func drainN(c chan string, n int) {
+	for n > 0 {
+		n--
+		<-c
+	}
 }
 
 var nextIP = net.ParseIP("10.0.0.10")

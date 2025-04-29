@@ -54,7 +54,7 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 		res.vals[k] = t
 	}
 	return res
-} // TODO: implement filtering
+}
 
 func (s *staticList[T]) Register(f func(o Event[T])) Registration {
 	return s.RegisterBatched(func(evs []Event[T]) {
@@ -134,7 +134,7 @@ func (s *staticList[T]) List() []T {
 }
 
 func (s *staticList[T]) Index(extractor KeyExtractor[T]) Index[T] { // TODO: test indexing.
-	idx := newIndex[T](s, extractor, func(m map[key[T]]struct{}) []T {
+	idx := newMapIndex[T](s, extractor, func(m map[key[T]]struct{}) []T {
 		res := make([]T, 0, len(m))
 		s.mu.RLock()
 		defer s.mu.RUnlock()

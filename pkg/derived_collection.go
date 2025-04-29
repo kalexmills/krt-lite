@@ -4,7 +4,6 @@ import (
 	"github.com/kalexmills/krt-lite/pkg/bimap"
 	"github.com/kalexmills/krt-lite/pkg/fifo"
 	"k8s.io/utils/ptr"
-	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -160,7 +159,7 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 }
 
 func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
-	idx := newIndex(c, e, func(oKeys map[key[O]]struct{}) []O {
+	idx := newMapIndex(c, e, func(oKeys map[key[O]]struct{}) []O {
 		c.mut.RLock()
 		defer c.mut.RUnlock()
 		result := make([]O, 0, len(oKeys))
@@ -344,9 +343,10 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, events []Event[any]) {
 	changedKeys := c.changedKeys(dependency, events)
 	if len(changedKeys) == 0 {
-		slog.Debug("NO KEYS CHANGED", "events", events, "dependency", dependency)
 		return
 	}
+
+	// generate fake events based on updates.
 
 	res := make([]Event[I], 0, len(events))
 
@@ -378,6 +378,7 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 			res = append(res, e)
 		}
 	}
+	c.logger().Debug("added fetch events", "updateCount", len(events), "deletionCount", len(deletions), "events", events)
 	c.handleEvents(res)
 }
 
@@ -390,6 +391,7 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 			key := GetKey[any](item)
 			for iKey := range c.depMap.GetUs(depKey{depID: dep.depID, key: key}) {
 				found = true
+				c.logger().Debug("found a match")
 				result[iKey] = struct{}{}
 			}
 		}
@@ -405,6 +407,7 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 			}
 		}
 	}
+	c.logger().Debug("changedKeys", "result", result)
 	return result
 }
 

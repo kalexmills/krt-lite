@@ -8,6 +8,7 @@ import (
 	"k8s.io/utils/ptr"
 	"log/slog"
 	"sync/atomic"
+	"time"
 )
 
 type (
@@ -17,7 +18,7 @@ type (
 	// A FlatMapper maps its input to zero or more output values.
 	FlatMapper[I, O any] func(ktx Context, i I) []O
 
-	// A KeyExtractor is used to extract mapIndex keys from an object.
+	// A KeyExtractor is used to extractRuntimeObject mapIndex keys from an object.
 	KeyExtractor[T any] func(t T) []string
 )
 
@@ -112,17 +113,18 @@ type Singleton[T any] interface {
 
 // collectionShared contains metadata and fields common to controllers.
 type collectionShared struct {
-	uid  uint64
-	name string
-	stop <-chan struct{}
+	uid          uint64
+	name         string
+	stop         <-chan struct{}
+	pollInterval *time.Duration
 }
 
-//nolint:unused // TODO: remove if still unused
+//nolint:unused // implementing interface
 func (c collectionShared) getName() string {
 	return c.name
 }
 
-//nolint:unused // TODO: remove if still unused
+//nolint:unused // implementing interface
 func (c collectionShared) getUID() uint64 {
 	return c.uid
 }
@@ -242,20 +244,6 @@ func GetKey[O any](o O) string {
 		return typed.Key()
 	}
 	panic(fmt.Sprintf("Cannot get key, got %T", o))
-}
-
-// Labeler is implemented by any type which can have labels.
-type Labeler interface {
-	GetLabels() map[string]string
-}
-
-func getLabels(obj any) map[string]string {
-	switch typed := obj.(type) {
-	case Labeler:
-		return typed.GetLabels()
-	default:
-		panic(fmt.Sprintf("Cannot get labels, got %T", obj))
-	}
 }
 
 func getTypedKey[O any](o O) key[O] {

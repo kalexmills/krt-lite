@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
 	"log/slog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"time"
@@ -101,6 +102,9 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 		synced: make(chan struct{}),
 	}
 	i.syncer = &channelSyncer{synced: i.synced}
+	if i.pollInterval == nil {
+		i.pollInterval = ptr.To(100 * time.Millisecond)
+	}
 
 	go func() {
 		cache.WaitForCacheSync(i.stop, i.inf.HasSynced) // TODO: use our own polling wait instead of WaitForCacheSync
@@ -192,7 +196,7 @@ func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
 		}
 
 		// sleep for 1 second, but return if the stop chan is closed.
-		t := time.NewTimer(time.Millisecond * 100) // TODO: allow users to set the poll interval
+		t := time.NewTimer(*i.pollInterval)
 		select {
 		case <-stop:
 			return false
@@ -210,7 +214,7 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 	idxKey := fmt.Sprintf("%p", e) // map based on the extractor func.
 	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
 		idxKey: func(obj any) ([]string, error) {
-			t := extract[T](obj)
+			t := extractRuntimeObject[T](obj)
 			if t == nil {
 				return nil, nil
 			}
@@ -220,7 +224,7 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 	if err != nil {
 		i.logger().Error("failed to add requested indexer", "err", err)
 	}
-	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer()}
+	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e}
 }
 
 func indexByNamespaceName(in any) ([]string, error) {
@@ -235,8 +239,9 @@ func indexByNamespaceName(in any) ([]string, error) {
 type informerIndexer[T any] struct {
 	parentName string
 
-	idxKey string
-	inf    cache.Indexer
+	idxKey    string
+	inf       cache.Indexer
+	extractor KeyExtractor[T]
 }
 
 func (i *informerIndexer[T]) Lookup(key string) []T {
@@ -251,28 +256,37 @@ func (i *informerIndexer[T]) Lookup(key string) []T {
 	return result
 }
 
+func (i *informerIndexer[T]) objectHasKey(t T, key string) bool {
+	for _, got := range i.extractor(t) {
+		if got == key {
+			return true
+		}
+	}
+	return false
+}
+
 type eventHandler[T runtime.Object] struct {
 	handler func(ev Event[T], syncing bool)
 }
 
 func (e eventHandler[T]) OnAdd(obj any, isInInitialList bool) {
 	e.handler(Event[T]{
-		New:   extract[T](obj),
+		New:   extractRuntimeObject[T](obj),
 		Event: EventAdd,
 	}, isInInitialList)
 }
 
 func (e eventHandler[T]) OnUpdate(oldObj, newObj any) {
 	e.handler(Event[T]{
-		Old:   extract[T](oldObj),
-		New:   extract[T](newObj),
+		Old:   extractRuntimeObject[T](oldObj),
+		New:   extractRuntimeObject[T](newObj),
 		Event: EventUpdate,
 	}, false)
 }
 
 func (e eventHandler[T]) OnDelete(obj any) {
 	e.handler(Event[T]{
-		Old:   extract[T](obj),
+		Old:   extractRuntimeObject[T](obj),
 		Event: EventDelete,
 	}, false)
 }
@@ -282,7 +296,8 @@ func zero[T comparable]() T {
 	return z
 }
 
-func extract[T runtime.Object](obj any) *T {
+// extractRuntimeObject retrieves a runtime.Object from its argument.
+func extractRuntimeObject[T runtime.Object](obj any) *T {
 	if obj == nil {
 		return nil
 	}

@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"maps"
+	"log/slog"
 	"slices"
 	"testing"
 )
@@ -207,7 +207,7 @@ func TestCollectionMerged(t *testing.T) {
 }
 
 func TestCollectionDiamond(t *testing.T) {
-	// Tests a diamond dependency graph:
+	// Tests a diamond dependency graph -- each edge has direction pointing downwards.
 	//
 	//           Pods
 	//          /    \
@@ -235,16 +235,14 @@ func TestCollectionDiamond(t *testing.T) {
 		if _, f := pd.Labels["want-size"]; !f {
 			return nil
 		}
-		matches := krtlite.Fetch(ctx, SizedPods)
-		matchCount := 0
-		for _, match := range matches { // TODO: use a fetch filter (once we have them) instead of doing this
-			if match.Size == pd.Labels["want-size"] {
-				matchCount++
-			}
-		}
+
+		matches := krtlite.Fetch(ctx, SizedPods, krtlite.MatchFilter(func(p SizedPod) bool {
+			return p.Size == pd.Labels["want-size"]
+		}))
+
 		return &PodSizeCount{
 			Named:         pd.Named,
-			MatchingSizes: matchCount,
+			MatchingSizes: len(matches),
 		}
 	}, krtlite.WithName("PodSizeCounts"))
 
@@ -396,7 +394,6 @@ func TestCollectionDiamond(t *testing.T) {
 }
 
 func TestDerivedCollectionMultipleFetch(t *testing.T) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -416,25 +413,20 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	lblBar := map[string]string{"app": "bar"}
 
 	Results := krtlite.Map(Pods, func(ctx krtlite.Context, i *corev1.Pod) *Result {
-		foos := krtlite.Fetch(ctx, ConfigMaps) // TODO: filter (once we have them)
-		foos = slices.DeleteFunc(foos, func(pod *corev1.ConfigMap) bool {
-			return !maps.Equal(pod.Labels, lblFoo)
-		})
-
-		bars := krtlite.Fetch(ctx, ConfigMaps) // TODO: filter (once we have them)
-		bars = slices.DeleteFunc(bars, func(pod *corev1.ConfigMap) bool {
-			return !maps.Equal(pod.Labels, lblBar)
-		})
-
 		var names []string
+
+		foos := krtlite.Fetch(ctx, ConfigMaps, krtlite.MatchLabels(lblFoo))
 		for _, cm := range foos {
 			names = append(names, cm.Name)
 		}
+
+		bars := krtlite.Fetch(ctx, ConfigMaps, krtlite.MatchLabels(lblBar))
 		for _, cm := range bars {
 			names = append(names, cm.Name)
 		}
 
 		slices.Sort(names)
+		slog.Debug("called map handler", "Configs", names, "foos", foos, "bars", bars)
 		return &Result{
 			Named:   NewNamed(i),
 			Configs: names,
