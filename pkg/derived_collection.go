@@ -179,6 +179,7 @@ func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
 func (c *derivedCollection[I, O]) run() {
 	c.logger().Debug("waiting for parent to sync")
 	if !c.parent.WaitUntilSynced(c.stop) {
+		c.logger().Error("parent registration failed to sync, this collection will never sync")
 		return
 	}
 	c.logger().Debug("parent synced")
@@ -191,6 +192,7 @@ func (c *derivedCollection[I, O]) run() {
 	go c.inputQueue.Run(c.stop)
 
 	if !c.parentReg.WaitUntilSynced(c.stop) {
+		c.logger().Error("parent registration never synced, this collection will never sync")
 		return
 	}
 	c.logger().Debug("parent registration synced")

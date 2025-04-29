@@ -22,6 +22,7 @@ Writing Kubernetes controllers is easier when you can:
 - [X] Fetch -- fetching from a collection and tracking dependencies.
 - [X] UnregisterHandler -- for listening temporarily
 - [ ] Filtering -- Filtering collections and on fetch.
+  - [ ] Filters / Indexers for StaticCollection
 - [ ] CollectionOption -- tweaking how collectors work in various ways.
   - [X] WithName Collection names (very needed for debugging)
   - [X] WithStop

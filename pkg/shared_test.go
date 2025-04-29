@@ -124,7 +124,7 @@ func (s SimpleEndpoint) Key() string {
 
 func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtlite.Collection[SimpleService]) krtlite.Collection[SimpleEndpoint] {
 	return krtlite.FlatMap[SimpleService, SimpleEndpoint](services, func(ctx krtlite.Context, svc SimpleService) []SimpleEndpoint {
-		pods := krtlite.Fetch(ctx, pods)
+		pods := krtlite.Fetch(ctx, pods) // TODO: use filtering
 		var res []SimpleEndpoint
 		for _, pod := range pods {
 			if labels.SelectorFromSet(svc.Selector).Matches(labels.Set(pod.Labels)) {
@@ -215,6 +215,11 @@ func (t *tracker[T]) Wait(events ...string) {
 	}, timeout, pollInterval, "expected events: %v", events)
 }
 
+type LabeledNamed struct {
+	Named
+	Labeled
+}
+
 type Named struct {
 	Namespace string
 	Name      string
@@ -279,6 +284,16 @@ func CollectionKeysMatch[T any](coll krtlite.Collection[T], expectedNames ...str
 	}
 }
 
+func AssertEventuallyKeysMatch[T any](t *testing.T, coll krtlite.Collection[T], expectedNames ...string) {
+	t.Helper()
+	passed := assert.Eventually(t, func() bool {
+		return CollectionKeysMatch(coll, expectedNames...)()
+	}, timeout, pollInterval)
+	if !passed {
+		t.Errorf("got :%v; want: %v", ListSorted(coll), expectedNames)
+	}
+}
+
 func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObjs ...T) bool {
 	listed := coll.List()
 	if len(listed) != len(expectedObjs) {
@@ -290,6 +305,10 @@ func CollectionContentsDeepEquals[T any](coll krtlite.Collection[T], expectedObj
 		}
 	}
 	return true
+}
+
+func CollectionEmpty[T any](coll krtlite.Collection[T]) bool {
+	return CollectionContentsDeepEquals(coll)
 }
 
 func AssertEventuallyDeepEquals[T any](t *testing.T, coll krtlite.Collection[T], expectedObjs ...T) {

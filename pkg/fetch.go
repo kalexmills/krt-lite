@@ -7,8 +7,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"strings"
 )
 
 // Context is used to track dependencies between Collections via Fetch.
@@ -144,17 +144,23 @@ func MatchLabelSelector(selector labels.Selector) FetchOption {
 	}
 }
 
-// MatchNames ensures Fetch only returns Kubernetes objects with a matching set of names and namespaces. MatchNames may
-// be used multiple times in the same Fetch call.
+// MatchNames ensures Fetch only returns Kubernetes objects with a matching set of names and namespaces. Names must be
+// formatted as "{namespace}/{name}", or "{name}", for non-namespaced objects. MatchNames may be used multiple times in
+// the same Fetch call.
 //
 // Panics may occur when used in Collections that do not contain kubernetes [metav1.Object].
-func MatchNames(names ...types.NamespacedName) FetchOption {
+func MatchNames(names ...string) FetchOption {
 	return func(d *dependency) {
 		if d.filterNames == nil {
 			d.filterNames = make(map[cache.ObjectName]struct{}, len(names))
 		}
 		for _, name := range names {
-			d.filterNames[cache.ObjectName{Name: name.Name, Namespace: name.Namespace}] = struct{}{}
+			before, after, ok := strings.Cut(name, "/")
+			if !ok {
+				d.filterNames[cache.ObjectName{Name: before}] = struct{}{}
+			} else {
+				d.filterNames[cache.ObjectName{Name: after, Namespace: before}] = struct{}{}
+			}
 		}
 	}
 }
@@ -259,6 +265,14 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 		opt(d)
 	}
 
+	ts := c.List()
+	var out []T
+	for _, t := range ts {
+		if d.Matches(t) {
+			out = append(out, t)
+		}
+	}
+
 	ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
 		ff := func(ts []Event[T]) {
 			// do type erasure to cast from T to any.
@@ -272,17 +286,6 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 
 		return c.RegisterBatched(ff, false)
 	})
-
-	c.logger().Debug("start matching", "d", d)
-	ts := c.List()
-	var out []T
-	for _, t := range ts {
-		if d.Matches(t) {
-			out = append(out, t)
-			c.logger().Debug("matched", "t", t)
-		}
-	}
-	c.logger().Debug("done matching")
 
 	for i := 0; i < min(MaxTrackKeys, len(out)); i++ {
 		var keys []string
@@ -299,8 +302,8 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 // will always match nothing.
 type SelectorExtractor func(any) labels.Selector
 
-// LabelSelectorExtractor knows how to retrieve label selectors from common Kubernetes objects, and any object that
-// implements LabelSelectorer. Panics if an unsupported object are used.
+// LabelSelectorExtractor knows how to retrieve label selectors from many common Kubernetes objects, and any
+// LabelSelectorer. Panics if an unsupported object is used.
 //
 // Supports fetching pod label selectors from *[corev1.Service], *[appsv1.DaemonSet], *[appsv1.Deployment],
 // *[appsv1.ReplicaSet], *[appsv1.StatefulSet], *[batchv1.Job], and *[batchv1.CronJob].

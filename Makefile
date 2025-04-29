@@ -35,11 +35,11 @@ lint: ## Runs go fmt.
 
 .PHONY: test
 test: ## Runs go test.
-	@go test -race -v ./...
+	@CGO_ENABLED=1 go test -race -v ./...
 
 .PHONY: test-ci
 test-ci:
-	@go test -coverprofile=cover.out -failfast -race -count 10 -shuffle on -v ./...
+	@CGO_ENABLED=1 go test -coverprofile=cover.out -failfast -race -count 10 -shuffle on -v ./...
 
 .PHONY: bench
 bench: ## Runs go test with benchmarks.

@@ -48,6 +48,7 @@ func (m *mergedCollection[T]) init() {
 	m.logger().Debug("waiting for parents to sync")
 	for _, c := range m.collections {
 		if !c.WaitUntilSynced(m.stop) {
+			c.logger().Warn("parent collection failed to sync, this collection will never sync")
 			return
 		}
 	}

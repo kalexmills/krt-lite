@@ -65,7 +65,7 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 	if runExistingState {
 		v := s.val.Load()
 		if v != nil {
-			f([]Event[T]{{
+			go f([]Event[T]{{ // call handler on another thread to avoid deadlocks.
 				New:   v,
 				Event: EventAdd,
 			}})
