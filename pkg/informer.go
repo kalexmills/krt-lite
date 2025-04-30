@@ -22,6 +22,8 @@ const keyIdx = "namespace/name"
 // NewInformer returns a Collection[T] backed by an informer which uses the provided controller-runtime Client. Caller
 // must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
 // *corev1.Pods, TL must be *corev1.PodList. TL must implement client.ObjectList.
+//
+// Objects in this Collection will have keys of the form "{namespace}/{name}".
 func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -71,10 +73,11 @@ func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
 	return result
 }
 
-// NewTypedClientInformer returns a Collection[T] backed by an Informer created from the passed TypedClient.
+// NewTypedClientInformer returns a Collection[T] backed by an Informer created from the passed TypedClient. Caller
+// must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
+// *corev1.Pods, TL must be *corev1.PodList. TL must implement client.ObjectList.
 //
-// To avoid panics, caller must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list
-// object. For example, if T is *corev1.Pods, TL must be *corev1.PodList.
+// Objects in this Collection will have keys of the form "{namespace}/{name}".
 func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
@@ -87,8 +90,9 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 }
 
 // NewListerWatcherInformer creates a new Collection from items returned by hte provided cache.ListerWatcher.
+// Caller must ensure the provided ListerWatcher does not return objects of type T.
 //
-// Panics if the provided ListerWatcher does not return objects of type T.
+// Objects in this Collection will have keys of the form "{namespace}/{name}".
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),
@@ -127,7 +131,7 @@ type informer[T runtime.Object] struct {
 	syncer *channelSyncer
 }
 
-// GetKey retrieves an object by its key. For a Kubernetes informer, this must be the namespace and name of the object.
+// GetKey retrieves an object by its key. For an informer, this must be the namespace and name of the object.
 func (i *informer[T]) GetKey(k string) *T {
 	obj, exists, err := i.inf.GetIndexer().GetByKey(k)
 	if err != nil || !exists {

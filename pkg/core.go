@@ -109,6 +109,8 @@ type Singleton[T any] interface {
 	Get() *T
 	// Set replaces the current value with its argument.
 	Set(*T)
+	// MarkSynced marks this collection as synced. Multiple calls to this method have no effect.
+	MarkSynced()
 }
 
 // collectionShared contains metadata and fields common to controllers.

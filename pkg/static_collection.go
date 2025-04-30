@@ -24,7 +24,6 @@ type staticList[T any] struct {
 	collectionShared
 	mu     sync.RWMutex
 	vals   map[string]T
-	stop   <-chan struct{}
 	syncer Syncer
 
 	indices []*mapIndex[T]
@@ -34,8 +33,8 @@ type staticList[T any] struct {
 
 var _ StaticCollection[any] = &staticList[any]{}
 
-// NewStaticCollection creates and returns a new StaticCollection containing the provided list of values. If no Syncer
-// is provided, the collection starts as synced. Otherwise the Syncer provided is used to determine when this
+// NewStaticCollection returns a StaticCollection containing the provided list of values. If a nil Syncer
+// is passed, the collection starts as synced. Otherwise, the provided Syncer is used to determine when this
 // StaticCollection has seen all of its initial state. Caller is responsible for ensuring the Syncer passed eventually
 // syncs -- failing to do so will prevent downstream Collections from starting.
 func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOption) StaticCollection[T] {
@@ -46,7 +45,6 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 		collectionShared: newCollectionShared(opts),
 		vals:             make(map[string]T, len(vals)),
 		syncer:           synced,
-		stop:             make(chan struct{}),
 		handlers:         make(map[*registrationHandler[T]]struct{}),
 	}
 	for _, t := range vals {

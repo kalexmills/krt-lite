@@ -68,15 +68,13 @@ type derivedCollection[I, O any] struct {
 	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
 	registeredHandlers map[*registrationHandler[O]]struct{}
 
-	parentReg Syncer
-
 	syncedCh chan struct{}
 	syncer   *multiSyncer
 
 	collectionDependencies map[uint64]struct{}      // keyed list of collections w/ dependencies added via fetch
 	dependencies           map[key[I]][]*dependency // dependencies by input key
 
-	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys from Fetch dependencies.
+	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys of dependencies.
 
 	taskQueue *fifo.Queue[task]
 }
@@ -196,7 +194,7 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent synced")
 
-	c.parentReg = c.parent.RegisterBatched(func(evs []Event[I]) {
+	parentReg := c.parent.RegisterBatched(func(evs []Event[I]) {
 		c.submitTask(func() {
 			c.handleEvents(evs)
 		})
@@ -205,7 +203,7 @@ func (c *derivedCollection[I, O]) run() {
 	// parent registration will push to the queue, so the queue must be running before we wait for registration to sync.
 	go c.taskQueue.Run(c.stop)
 
-	if !c.parentReg.WaitUntilSynced(c.stop) {
+	if !parentReg.WaitUntilSynced(c.stop) {
 		c.logger().Error("parent registration never synced, this collection will never sync")
 		return
 	}
