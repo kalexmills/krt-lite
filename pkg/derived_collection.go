@@ -473,7 +473,7 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 	h := &registrationHandler[O]{
 		parent:          parent,
 		handler:         handler,
-		queue:           fifo.NewQueue[any](PreallocBufferSize),
+		queue:           fifo.NewQueue[regQueueItem[O]](PreallocBufferSize),
 		stopCh:          make(chan struct{}),
 		syncedCh:        make(chan struct{}),
 		closeSyncedOnce: &sync.Once{},
@@ -486,16 +486,12 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 	return h
 }
 
-// eventParentIsSynced is sent when a queue has processed all of its initial input events.
-type eventParentIsSynced struct{}
-
 // registrationHandler handles a fifo.Queue of batched output events which are being sent to a registered component.
 type registrationHandler[T any] struct {
 	parent Collection[T]
 
 	handler func(o []Event[T])
-	// each entry will be either []Event[T] or eventParentIsSynced{}
-	queue *fifo.Queue[any]
+	queue   *fifo.Queue[regQueueItem[T]]
 
 	stopCh chan struct{}
 
@@ -504,6 +500,11 @@ type registrationHandler[T any] struct {
 	syncer          *multiSyncer
 
 	unregister func()
+}
+
+type regQueueItem[T any] struct {
+	initialEventsSent bool
+	events            []Event[T]
 }
 
 func (p *registrationHandler[T]) Unregister() {
@@ -530,26 +531,28 @@ func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 	case <-p.stopCh:
 		p.parent.logger().Info("stopping registration handler")
 		return
-	case p.queue.In() <- os:
+	case p.queue.In() <- regQueueItem[T]{events: os}:
 	}
 	if !isInInitialList {
 		return
 	}
 
-	select { // if we're already synced then return
-	case <-p.syncedCh:
+	// signal that we've received all initial events
+	select {
+	case <-p.syncedCh: // if syncedCh is closed then we're synced -- there's nothing else to do.
 		return
 	default:
 		select {
 		case <-p.stopCh:
 			p.parent.logger().Info("stopping registration handler")
 			return
-		case p.queue.In() <- eventParentIsSynced{}:
+		// parent is synced once we have received our initial set of events.
+		case p.queue.In() <- regQueueItem[T]{initialEventsSent: true}:
 		}
 	}
 }
 
-func (p *registrationHandler[O]) run() {
+func (p *registrationHandler[T]) run() {
 	go p.queue.Run(p.stopCh)
 	for {
 		select {
@@ -560,13 +563,13 @@ func (p *registrationHandler[O]) run() {
 			if !ok {
 				return
 			}
-			if _, ok := fromQueue.(eventParentIsSynced); ok {
+			if fromQueue.initialEventsSent {
 				p.markSynced()
 				continue
 			}
-			next := fromQueue.([]Event[O])
-			if len(next) > 0 {
-				p.handler(next)
+
+			if len(fromQueue.events) > 0 {
+				p.handler(fromQueue.events)
 			}
 		}
 	}
