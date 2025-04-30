@@ -107,7 +107,8 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	}
 
 	go func() {
-		cache.WaitForCacheSync(i.stop, i.inf.HasSynced) // TODO: use our own polling wait instead of WaitForCacheSync
+		syncer := &pollingSyncer{interval: *i.pollInterval, hasSynced: i.inf.HasSynced}
+		syncer.WaitUntilSynced(i.stop)
 		i.logger().Debug("informer cache has synced")
 		close(i.synced)
 	}()
@@ -158,7 +159,7 @@ func (i *informer[T]) Register(f func(ev Event[T])) Registration {
 		i.logger().Error("error registering informer handler", "err", err)
 	}
 
-	return &informerRegistration[T]{parent: i, reg: reg}
+	return newInformerRegistration(i, reg)
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Registration {
@@ -171,7 +172,7 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 		i.logger().Error("error registering informer event handler", "err", err)
 	}
 
-	return &informerRegistration[T]{parent: i, reg: reg}
+	return newInformerRegistration(i, reg)
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
@@ -304,6 +305,18 @@ type TypedClient[TL runtime.Object] interface {
 type informerRegistration[T runtime.Object] struct {
 	parent *informer[T]
 	reg    cache.ResourceEventHandlerRegistration
+	syncer *pollingSyncer
+}
+
+func newInformerRegistration[T runtime.Object](parent *informer[T], reg cache.ResourceEventHandlerRegistration) *informerRegistration[T] {
+	return &informerRegistration[T]{
+		parent: parent,
+		reg:    reg,
+		syncer: &pollingSyncer{
+			interval:  *parent.pollInterval,
+			hasSynced: reg.HasSynced,
+		},
+	}
 }
 
 func (r *informerRegistration[T]) Unregister() {
@@ -313,7 +326,7 @@ func (r *informerRegistration[T]) Unregister() {
 }
 
 func (r *informerRegistration[T]) WaitUntilSynced(stop <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stop, r.reg.HasSynced)
+	return r.syncer.WaitUntilSynced(stop)
 }
 
 func (r *informerRegistration[T]) HasSynced() bool {
