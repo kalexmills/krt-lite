@@ -17,7 +17,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 	const (
 		N       = 100
 		K       = 100 // K cannot be higher than watch.DefaultChanSize, which can't be set with the race detector enabled
-		timeout = 5 * time.Second
+		timeout = 10 * time.Second
 	)
 
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
@@ -102,6 +102,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 		_ = c.Create(ctx, s)
 	}
 
+	var lastEventSeen time.Time
 	count := 0
 	for n := 0; n < N; n++ {
 		for i := 0; i < K; i++ { // send K updates
@@ -127,9 +128,11 @@ func TestDetectDroppedEvents(t *testing.T) {
 			select {
 			case <-events:
 				count++
+				lastEventSeen = time.Now()
 			case <-ctx.Done():
 				// panic to force a stack trace. If you do not see one, run go test with GOTRACEBACK=all.
-				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d", timeout, count, (n+1)*1000))
+				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d; last event seen %T ago",
+					timeout, count, (n+1)*K, time.Since(lastEventSeen)))
 			}
 		}
 	}

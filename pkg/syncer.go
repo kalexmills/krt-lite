@@ -1,7 +1,10 @@
 package pkg
 
 import (
+	"context"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sync"
+	"time"
 )
 
 // Syncer is used to indicate that a Collection has synced.
@@ -89,4 +92,42 @@ func (s channelSyncer) HasSynced() bool {
 	default:
 		return false
 	}
+}
+
+// pollingSyncer is used to provide us more control over poll intervals than we get from the cache package.
+// Only intended for use when an upstream package forces a particular poll interval upon us.
+type pollingSyncer struct {
+	interval  time.Duration
+	hasSynced func() bool
+}
+
+func (s *pollingSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() { // convert the stop channel into context cancellation.
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	err := wait.PollUntilContextCancel(ctx, s.interval, true,
+		func(ctx context.Context) (done bool, err error) {
+			if !s.hasSynced() {
+				return false, nil
+			}
+			return true, nil
+		},
+	)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *pollingSyncer) HasSynced() bool {
+	return s.hasSynced()
 }
