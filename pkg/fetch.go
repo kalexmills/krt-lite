@@ -265,14 +265,7 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 		opt(d)
 	}
 
-	ts := c.List()
-	var out []T
-	for _, t := range ts {
-		if d.Matches(t) {
-			out = append(out, t)
-		}
-	}
-
+	// we must register before we List() so as to not miss any events
 	ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
 		ff := func(ts []Event[T]) {
 			// do type erasure to cast from T to any.
@@ -286,6 +279,14 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 
 		return c.RegisterBatched(ff, false)
 	})
+
+	ts := c.List()
+	var out []T
+	for _, t := range ts {
+		if d.Matches(t) {
+			out = append(out, t)
+		}
+	}
 
 	for i := 0; i < min(MaxTrackKeys, len(out)); i++ {
 		var keys []string

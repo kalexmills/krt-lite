@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"sync"
-	"sync/atomic"
 )
 
 // Syncer is used to indicate that a Collection has synced.
@@ -16,23 +15,15 @@ type multiSyncer struct {
 	synced      chan struct{} // synced is used as an optimization to avoid looping
 	closeSynced *sync.Once
 
-	syncersMut *sync.RWMutex
-	syncers    []Syncer
+	syncers []Syncer
 }
 
 func newMultiSyncer(syncers ...Syncer) *multiSyncer {
 	return &multiSyncer{
 		synced:      make(chan struct{}),
 		closeSynced: &sync.Once{},
-		syncersMut:  &sync.RWMutex{},
 		syncers:     syncers,
 	}
-}
-
-func (c *multiSyncer) Add(syncer Syncer) {
-	c.syncersMut.Lock()
-	defer c.syncersMut.Unlock()
-	c.syncers = append(c.syncers, syncer)
 }
 
 // WaitUntilSynced waits until the currently configured syncers have all completed.
@@ -41,8 +32,6 @@ func (c *multiSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 	case <-c.synced:
 		return true
 	default:
-		c.syncersMut.RLock()
-		defer c.syncersMut.RUnlock()
 		for _, s := range c.syncers {
 			if !s.WaitUntilSynced(stop) {
 				return false
@@ -60,8 +49,6 @@ func (c *multiSyncer) HasSynced() bool {
 	case <-c.synced:
 		return true
 	default:
-		c.syncersMut.RLock()
-		defer c.syncersMut.RUnlock()
 		for _, s := range c.syncers {
 			if !s.HasSynced() {
 				return false
@@ -102,11 +89,4 @@ func (s channelSyncer) HasSynced() bool {
 	default:
 		return false
 	}
-}
-
-// idSyncer is a bit like a waitgroup.
-type idSyncer struct { //nolint:unused // May be used by Join
-	count   *atomic.Int64
-	indices *sync.Map
-	synced  chan struct{}
 }

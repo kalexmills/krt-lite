@@ -113,8 +113,8 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 			Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
 		},
 	)
-	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"), krtlite.WithName("Pods"))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"), krtlite.WithName("Services"))
 
 	// assert that collections are equal immediately after waiting for sync.
 	SimplePods := SimplePodCollection(pods)
