@@ -70,16 +70,15 @@ type derivedCollection[I, O any] struct {
 
 	parentReg Syncer
 
-	markSynced *sync.Once
-	syncedCh   chan struct{}
-	syncer     *multiSyncer
+	syncedCh chan struct{}
+	syncer   *multiSyncer
 
 	collectionDependencies map[uint64]struct{}      // keyed list of collections w/ dependencies added via fetch
 	dependencies           map[key[I]][]*dependency // dependencies by input key
 
 	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys from Fetch dependencies.
 
-	inputQueue *fifo.Queue[inputEvent[I]]
+	taskQueue *fifo.Queue[task]
 }
 
 type depKey struct {
@@ -102,8 +101,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		regHandlerMut:      &sync.RWMutex{},
 		registeredHandlers: make(map[*registrationHandler[O]]struct{}),
 
-		markSynced: &sync.Once{},
-		inputQueue: fifo.NewQueue[inputEvent[I]](PreallocBufferSize),
+		taskQueue: fifo.NewQueue[task](PreallocBufferSize),
 
 		collectionDependencies: make(map[uint64]struct{}),
 		dependencies:           make(map[key[I]][]*dependency),
@@ -120,6 +118,8 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 }
 
 var _ Collection[any] = &derivedCollection[int, any]{}
+
+type task func()
 
 func (c *derivedCollection[I, O]) GetKey(k string) *O {
 	c.mut.RLock()
@@ -197,11 +197,13 @@ func (c *derivedCollection[I, O]) run() {
 	c.logger().Debug("parent synced")
 
 	c.parentReg = c.parent.RegisterBatched(func(evs []Event[I]) {
-		c.inputQueue.In() <- inputEvents(evs)
+		c.submitTask(func() {
+			c.handleEvents(evs)
+		})
 	}, true)
 
 	// parent registration will push to the queue, so the queue must be running before we wait for registration to sync.
-	go c.inputQueue.Run(c.stop)
+	go c.taskQueue.Run(c.stop)
 
 	if !c.parentReg.WaitUntilSynced(c.stop) {
 		c.logger().Error("parent registration never synced, this collection will never sync")
@@ -209,35 +211,34 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent registration synced")
 
-	// registration is synced so they must have pushed everything -- mark ourselves as synced once init items processed
-	c.markSynced.Do(func() {
-		c.inputQueue.In() <- inputEventCollectionSynced[I]()
+	// registration is synced so parent has sent all initial events -- push a task to mark ourselves as synced after
+	// processing all input items
+	c.submitTask(func() {
+		close(c.syncedCh)
+		c.logger().Debug("collection has synced", "parentName", c.parent.getName())
 	})
-	c.processInputQueue()
+	c.processTaskQueue()
+}
+
+func (c *derivedCollection[I, O]) submitTask(task task) {
+	c.taskQueue.In() <- task
 }
 
 func (c *derivedCollection[I, O]) pushFetchEvents(d *dependency, events []Event[any]) {
-	c.inputQueue.In() <- fetchEvents[I](d, events)
+	c.submitTask(func() {
+		c.handleFetchEvents(d, events)
+	})
 }
 
-func (c *derivedCollection[I, O]) processInputQueue() {
+// processTaskQueue processes items submitted to the task queue in order.
+func (c *derivedCollection[I, O]) processTaskQueue() {
 	for {
 		select {
 		case <-c.stop:
-			c.logger().Info("stopping input queue")
+			c.logger().Info("stopping task queue")
 			return
-		case input := <-c.inputQueue.Out():
-			if input.IsParentIsSynced() {
-				close(c.syncedCh)
-				c.logger().Debug("collection has synced", "parentName", c.parent.getName())
-				continue
-			}
-			if input.IsFetchEvents() {
-				c.handleFetchEvents(input.dependency, input.fetchEvents)
-				continue
-			}
-
-			c.handleEvents(input.events)
+		case task := <-c.taskQueue.Out():
+			task()
 		}
 	}
 }
@@ -467,7 +468,7 @@ func (c *derivedCollection[I, O]) unregisterFunc(reg *registrationHandler[O]) fu
 	}
 }
 
-// newRegistrationHandler returns a registration handler nad starts up the internal inputQueue.
+// newRegistrationHandler returns a registration handler nad starts up the internal taskQueue.
 func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[O])) *registrationHandler[O] {
 	h := &registrationHandler[O]{
 		parent:          parent,
@@ -570,37 +571,3 @@ func (p *registrationHandler[O]) run() {
 		}
 	}
 }
-
-type inputEvent[I any] struct {
-	header      byte
-	events      []Event[I]
-	dependency  *dependency
-	fetchEvents []Event[any] // TODO(perf): lower memory footprint by making it hold thunks.
-}
-
-func inputEventCollectionSynced[I any]() inputEvent[I] {
-	return inputEvent[I]{header: parentIsSynced}
-}
-
-func inputEvents[I any](events []Event[I]) inputEvent[I] {
-	return inputEvent[I]{events: events}
-}
-
-func fetchEvents[I any](d *dependency, events []Event[any]) inputEvent[I] {
-	return inputEvent[I]{header: isFetchEvents, fetchEvents: events, dependency: d}
-}
-
-// IsParentIsSynced means this event indicates the parent is synced. No events accompany this message.
-func (e *inputEvent[I]) IsParentIsSynced() bool {
-	return (e.header & parentIsSynced) > 0
-}
-
-// IsFetchEvents means this event contains only fetch events.
-func (e *inputEvent[I]) IsFetchEvents() bool {
-	return (e.header & isFetchEvents) > 0
-}
-
-const (
-	parentIsSynced = 1 << iota
-	isFetchEvents
-)
