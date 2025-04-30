@@ -8,10 +8,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
 	"strings"
 )
 
-// Context is used to track dependencies between Collections via Fetch.
+// Context is used to track dependencies created by called to Fetch. Passing a Context to a Fetch call creates a
+// dependency between the FlatMap or Map collection and the collection passed to Fetch. Updates to the Fetch collection
+// will cause handlers using Fetch to be recomputed for any relevant objects.
 type Context interface {
 	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer)
 	trackKeys(keys []string)
@@ -299,16 +302,29 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 	return out
 }
 
-// SelectorExtractor fetches labels.Selectors from objects in a collection. If nil is returned for any object, it
+func castEvent[I, O any](o Event[I]) Event[O] {
+	e := Event[O]{
+		Event: o.Event,
+	}
+	if o.Old != nil {
+		e.Old = ptr.To(any(*o.Old).(O))
+	}
+	if o.New != nil {
+		e.New = ptr.To(any(*o.New).(O))
+	}
+	return e
+}
+
+// SelectorExtractor can extract a [labels.Selector] from objects in a collection. If nil is returned for any object, it
 // will always match nothing.
 type SelectorExtractor func(any) labels.Selector
 
-// LabelSelectorExtractor knows how to retrieve label selectors from many common Kubernetes objects, and any
+// ExtractPodSelector knows how to retrieve pod label selectors from many common Kubernetes objects, and any
 // LabelSelectorer. Panics if an unsupported object is used.
 //
-// Supports fetching pod label selectors from *[corev1.Service], *[appsv1.DaemonSet], *[appsv1.Deployment],
+// Can fetch pod label selectors from *[corev1.Service], *[appsv1.DaemonSet], *[appsv1.Deployment],
 // *[appsv1.ReplicaSet], *[appsv1.StatefulSet], *[batchv1.Job], and *[batchv1.CronJob].
-func LabelSelectorExtractor(obj any) labels.Selector {
+func ExtractPodSelector(obj any) labels.Selector {
 	var lblSelector *metav1.LabelSelector
 	switch typed := obj.(type) {
 	case LabelSelectorer:

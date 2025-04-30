@@ -2,10 +2,8 @@ package pkg
 
 import (
 	"fmt"
-	"iter"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/ptr"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -251,27 +249,4 @@ func GetKey[O any](o O) string {
 
 func getTypedKey[O any](o O) key[O] {
 	return key[O](GetKey(o))
-}
-
-// setFromSeq forms a set from an iter.Seq.
-func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
-	result := make(map[T]struct{})
-	seq(func(t T) bool {
-		result[t] = struct{}{}
-		return true
-	})
-	return result
-}
-
-func castEvent[I, O any](o Event[I]) Event[O] {
-	e := Event[O]{
-		Event: o.Event,
-	}
-	if o.Old != nil {
-		e.Old = ptr.To(any(*o.Old).(O))
-	}
-	if o.New != nil {
-		e.New = ptr.To(any(*o.New).(O))
-	}
-	return e
 }

@@ -3,6 +3,7 @@ package pkg
 import (
 	"github.com/kalexmills/krt-lite/pkg/bimap"
 	"github.com/kalexmills/krt-lite/pkg/fifo"
+	"iter"
 	"k8s.io/utils/ptr"
 	"maps"
 	"reflect"
@@ -571,4 +572,14 @@ func (p *registrationHandler[T]) run() {
 			}
 		}
 	}
+}
+
+// setFromSeq forms a set from an iter.Seq.
+func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
+	result := make(map[T]struct{})
+	seq(func(t T) bool {
+		result[t] = struct{}{}
+		return true
+	})
+	return result
 }
