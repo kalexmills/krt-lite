@@ -86,6 +86,6 @@ func TestFetchOptions(t *testing.T) {
 			AssertEventuallyKeysMatch(t, Filtered, "ns/a", "ns/d")
 		}
 	}
-	t.Run("MatchSelectsLabels", serviceTest(krtlite.MatchSelectsLabels(keepLabels, krtlite.LabelSelectorExtractor)))
+	t.Run("MatchSelectsLabels", serviceTest(krtlite.MatchSelectsLabels(keepLabels, krtlite.ExtractPodSelector)))
 	t.Run("MatchNames", serviceTest(krtlite.MatchNames("ns/a", "ns/d")))
 }

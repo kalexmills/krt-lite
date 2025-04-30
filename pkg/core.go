@@ -262,16 +262,3 @@ func setFromSeq[T comparable](seq iter.Seq[T]) map[T]struct{} {
 	})
 	return result
 }
-
-func castEvent[I, O any](o Event[I]) Event[O] {
-	e := Event[O]{
-		Event: o.Event,
-	}
-	if o.Old != nil {
-		e.Old = ptr.To(any(*o.Old).(O))
-	}
-	if o.New != nil {
-		e.New = ptr.To(any(*o.New).(O))
-	}
-	return e
-}

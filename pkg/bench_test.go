@@ -111,7 +111,7 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		}
 
 		services := krtlite.Fetch(ktx, Services, krtlite.MatchIndex(ServicesByNamespace, p.Namespace),
-			krtlite.MatchSelectsLabels(p.Labels, krtlite.LabelSelectorExtractor))
+			krtlite.MatchSelectsLabels(p.Labels, krtlite.ExtractPodSelector))
 		result := &Workload{
 			Named: NewNamed(p),
 			IP:    p.Status.PodIP,
