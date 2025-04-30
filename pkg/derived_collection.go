@@ -10,6 +10,11 @@ import (
 	"sync"
 )
 
+// PreallocBufferSize is used to preallocate buffers for all unbounded queues used in krt-lite. Take care to set this
+// once before creating any collections to avoid data races. Must be a power of 2. Values less than fifo.MinRingbufLen
+// have no effect.
+var PreallocBufferSize = 1024
+
 // Map creates a new Collection by calling the provided Mapper on each item in C. The returned Collection will be kept
 // in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
 // Collection.
@@ -98,7 +103,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		registeredHandlers: make(map[*registrationHandler[O]]struct{}),
 
 		markSynced: &sync.Once{},
-		inputQueue: fifo.NewQueue[inputEvent[I]](1024),
+		inputQueue: fifo.NewQueue[inputEvent[I]](PreallocBufferSize),
 
 		collectionDependencies: make(map[uint64]struct{}),
 		dependencies:           make(map[key[I]][]*dependency),
@@ -204,7 +209,7 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent registration synced")
 
-	// registration is synced so they must have pushed everything -- mark ourselves as synced once everything has processed
+	// registration is synced so they must have pushed everything -- mark ourselves as synced once init items processed
 	c.markSynced.Do(func() {
 		c.inputQueue.In() <- inputEventCollectionSynced[I]()
 	})
@@ -467,7 +472,7 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 	h := &registrationHandler[O]{
 		parent:          parent,
 		handler:         handler,
-		queue:           fifo.NewQueue[any](1024),
+		queue:           fifo.NewQueue[any](PreallocBufferSize),
 		stopCh:          make(chan struct{}),
 		syncedCh:        make(chan struct{}),
 		closeSyncedOnce: &sync.Once{},
