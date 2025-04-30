@@ -113,10 +113,11 @@ type Singleton[T any] interface {
 
 // collectionShared contains metadata and fields common to controllers.
 type collectionShared struct {
-	uid          uint64
-	name         string
-	stop         <-chan struct{}
-	pollInterval *time.Duration
+	uid                 uint64
+	name                string
+	stop                <-chan struct{}
+	pollInterval        *time.Duration
+	wantSpuriousUpdates bool
 }
 
 //nolint:unused // implementing interface

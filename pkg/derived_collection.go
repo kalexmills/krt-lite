@@ -14,6 +14,9 @@ import (
 // in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
 // Collection.
 //
+// By default, if running the Mapper results in an identical object, no update event will be sent to downstream
+// collections.  WithSpuriousUpdates can be passed to disable this behavior.
+//
 // Panics will occur if an unsupported type for I or T is used, see GetKey for details.
 func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	ff := func(ctx Context, i I) []O {
@@ -29,6 +32,10 @@ func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOpti
 // FlatMap creates a new Collection by calling the provided FlatMapper on each item in C. Unlike Map, each item in
 // Collection c may result in zero or more items in the returned Collection. The returned Collection is kept in sync
 // with c. See Map for details.
+//
+// By default, if running the FlatMapper results in identical objects for the same key, no update event will be sent to
+// downstream collections.
+// WithSpuriousUpdates can be passed to disable this behavior.
 //
 // Panics will occur if an unsupported type of I or T are used, see GetKey for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
@@ -188,7 +195,7 @@ func (c *derivedCollection[I, O]) run() {
 		c.inputQueue.In() <- inputEvents(evs)
 	}, true)
 
-	// parent registration will push to the queue, so it must be running before we wait for registration to sync.
+	// parent registration will push to the queue, so the queue must be running before we wait for registration to sync.
 	go c.inputQueue.Run(c.stop)
 
 	if !c.parentReg.WaitUntilSynced(c.stop) {
@@ -197,9 +204,9 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent registration synced")
 
-	// parent is synced so they must have pushed everything -- mark ourselves as synced once everything has processed
+	// registration is synced so they must have pushed everything -- mark ourselves as synced once everything has processed
 	c.markSynced.Do(func() {
-		c.inputQueue.In() <- inputEventParentIsSynced[I]()
+		c.inputQueue.In() <- inputEventCollectionSynced[I]()
 	})
 	c.processInputQueue()
 }
@@ -212,21 +219,20 @@ func (c *derivedCollection[I, O]) processInputQueue() {
 	for {
 		select {
 		case <-c.stop:
+			c.logger().Info("stopping input queue")
 			return
 		case input := <-c.inputQueue.Out():
 			if input.IsParentIsSynced() {
-				c.logger().Debug("parent has synced", "parentName", c.parent.getName())
 				close(c.syncedCh)
+				c.logger().Debug("collection has synced", "parentName", c.parent.getName())
 				continue
 			}
 			if input.IsFetchEvents() {
-				c.logger().Debug("received fetch events", "fromCollectionID", input.dependency.collectionID)
 				c.handleFetchEvents(input.dependency, input.fetchEvents)
 				continue
 			}
 
 			c.handleEvents(input.events)
-			c.logger().Debug("handled events", "count", len(input.events))
 		}
 	}
 }
@@ -265,7 +271,6 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		iKey := getTypedKey(i)
 
 		// plumb input events to output events
-
 		if input.Event == EventDelete {
 			for oKey := range c.mappings[iKey] {
 				old, ok := c.outputs[oKey]
@@ -300,7 +305,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 
 				ev := Event[O]{}
 				if newOK && oldOK {
-					if reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
+					if !c.wantSpuriousUpdates && reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
 						continue
 					}
 					ev.Event = EventUpdate
@@ -379,7 +384,6 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 			res = append(res, e)
 		}
 	}
-	c.logger().Debug("added fetch events", "updateCount", len(events), "deletionCount", len(deletions), "events", events)
 	c.handleEvents(res)
 }
 
@@ -408,7 +412,6 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 			}
 		}
 	}
-	c.logger().Debug("changedKeys", "result", result)
 	return result
 }
 
@@ -519,6 +522,7 @@ func (p *registrationHandler[T]) HasSynced() bool {
 func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 	select {
 	case <-p.stopCh:
+		p.parent.logger().Info("stopping registration handler")
 		return
 	case p.queue.In() <- os:
 	}
@@ -532,6 +536,7 @@ func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 	default:
 		select {
 		case <-p.stopCh:
+			p.parent.logger().Info("stopping registration handler")
 			return
 		case p.queue.In() <- eventParentIsSynced{}:
 		}
@@ -543,6 +548,7 @@ func (p *registrationHandler[O]) run() {
 	for {
 		select {
 		case <-p.stopCh:
+			p.parent.logger().Debug("stopping registration handler")
 			return
 		case fromQueue, ok := <-p.queue.Out():
 			if !ok {
@@ -567,7 +573,7 @@ type inputEvent[I any] struct {
 	fetchEvents []Event[any] // TODO(perf): lower memory footprint by making it hold thunks.
 }
 
-func inputEventParentIsSynced[I any]() inputEvent[I] {
+func inputEventCollectionSynced[I any]() inputEvent[I] {
 	return inputEvent[I]{header: parentIsSynced}
 }
 

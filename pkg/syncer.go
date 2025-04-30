@@ -1,8 +1,10 @@
 package pkg
 
 import (
+	"context"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sync"
-	"sync/atomic"
+	"time"
 )
 
 // Syncer is used to indicate that a Collection has synced.
@@ -16,23 +18,15 @@ type multiSyncer struct {
 	synced      chan struct{} // synced is used as an optimization to avoid looping
 	closeSynced *sync.Once
 
-	syncersMut *sync.RWMutex
-	syncers    []Syncer
+	syncers []Syncer
 }
 
 func newMultiSyncer(syncers ...Syncer) *multiSyncer {
 	return &multiSyncer{
 		synced:      make(chan struct{}),
 		closeSynced: &sync.Once{},
-		syncersMut:  &sync.RWMutex{},
 		syncers:     syncers,
 	}
-}
-
-func (c *multiSyncer) Add(syncer Syncer) {
-	c.syncersMut.Lock()
-	defer c.syncersMut.Unlock()
-	c.syncers = append(c.syncers, syncer)
 }
 
 // WaitUntilSynced waits until the currently configured syncers have all completed.
@@ -41,8 +35,6 @@ func (c *multiSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 	case <-c.synced:
 		return true
 	default:
-		c.syncersMut.RLock()
-		defer c.syncersMut.RUnlock()
 		for _, s := range c.syncers {
 			if !s.WaitUntilSynced(stop) {
 				return false
@@ -60,8 +52,6 @@ func (c *multiSyncer) HasSynced() bool {
 	case <-c.synced:
 		return true
 	default:
-		c.syncersMut.RLock()
-		defer c.syncersMut.RUnlock()
 		for _, s := range c.syncers {
 			if !s.HasSynced() {
 				return false
@@ -104,9 +94,37 @@ func (s channelSyncer) HasSynced() bool {
 	}
 }
 
-// idSyncer is a bit like a waitgroup.
-type idSyncer struct { //nolint:unused // May be used by Join
-	count   *atomic.Int64
-	indices *sync.Map
-	synced  chan struct{}
+// pollingSyncer is used to provide us more control over poll intervals than we get from the cache package.
+// Only intended for use when an upstream package forces a particular poll interval upon us.
+type pollingSyncer struct {
+	interval  time.Duration
+	hasSynced func() bool
+}
+
+func (s *pollingSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() { // convert the stop channel into context cancellation.
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	err := wait.PollUntilContextCancel(ctx, s.interval, true,
+		func(ctx context.Context) (done bool, err error) {
+			if !s.hasSynced() {
+				return false, nil
+			}
+			return true, nil
+		},
+	)
+	return err == nil
+}
+
+func (s *pollingSyncer) HasSynced() bool {
+	return s.hasSynced()
 }

@@ -107,8 +107,9 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	}
 
 	go func() {
-		cache.WaitForCacheSync(i.stop, i.inf.HasSynced) // TODO: use our own polling wait instead of WaitForCacheSync
-		i.logger().Debug("informer has synced")
+		syncer := &pollingSyncer{interval: *i.pollInterval, hasSynced: i.inf.HasSynced}
+		syncer.WaitUntilSynced(i.stop)
+		i.logger().Debug("informer cache has synced")
 		close(i.synced)
 	}()
 
@@ -158,7 +159,7 @@ func (i *informer[T]) Register(f func(ev Event[T])) Registration {
 		i.logger().Error("error registering informer handler", "err", err)
 	}
 
-	return &informerRegistration[T]{parent: i, reg: reg}
+	return newInformerRegistration(i, reg)
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Registration {
@@ -171,39 +172,11 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 		i.logger().Error("error registering informer event handler", "err", err)
 	}
 
-	return &informerRegistration[T]{parent: i, reg: reg}
+	return newInformerRegistration(i, reg)
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
-	if i.syncer.HasSynced() {
-		return true
-	}
-
-	t0 := time.Now()
-
-	defer func() {
-		i.logger().Info("informer synced", "waitTime", time.Since(t0))
-	}()
-
-	for {
-		select {
-		case <-stop:
-			return false
-		default:
-		}
-		if i.syncer.HasSynced() {
-			return true
-		}
-
-		// sleep for 1 second, but return if the stop chan is closed.
-		t := time.NewTimer(*i.pollInterval)
-		select {
-		case <-stop:
-			return false
-		case <-t.C:
-		}
-		i.logger().Info("informer waiting for sync", "waitTime", time.Since(t0))
-	}
+	return i.syncer.WaitUntilSynced(stop)
 }
 
 func (i *informer[T]) HasSynced() bool {
@@ -211,7 +184,8 @@ func (i *informer[T]) HasSynced() bool {
 }
 
 func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
-	idxKey := fmt.Sprintf("%p", e) // map based on the extractor func.
+	idxKey := fmt.Sprintf("%p", e) // map key is based on the extractor func.
+
 	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
 		idxKey: func(obj any) ([]string, error) {
 			t := extractRuntimeObject[T](obj)
@@ -221,10 +195,11 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 			return e(*t), nil
 		},
 	})
+
 	if err != nil {
 		i.logger().Error("failed to add requested indexer", "err", err)
 	}
-	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e}
+	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e, parentName: i.name}
 }
 
 func indexByNamespaceName(in any) ([]string, error) {
@@ -330,6 +305,18 @@ type TypedClient[TL runtime.Object] interface {
 type informerRegistration[T runtime.Object] struct {
 	parent *informer[T]
 	reg    cache.ResourceEventHandlerRegistration
+	syncer *pollingSyncer
+}
+
+func newInformerRegistration[T runtime.Object](parent *informer[T], reg cache.ResourceEventHandlerRegistration) *informerRegistration[T] {
+	return &informerRegistration[T]{
+		parent: parent,
+		reg:    reg,
+		syncer: &pollingSyncer{
+			interval:  *parent.pollInterval,
+			hasSynced: reg.HasSynced,
+		},
+	}
 }
 
 func (r *informerRegistration[T]) Unregister() {
@@ -339,7 +326,7 @@ func (r *informerRegistration[T]) Unregister() {
 }
 
 func (r *informerRegistration[T]) WaitUntilSynced(stop <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stop, r.reg.HasSynced)
+	return r.syncer.WaitUntilSynced(stop)
 }
 
 func (r *informerRegistration[T]) HasSynced() bool {

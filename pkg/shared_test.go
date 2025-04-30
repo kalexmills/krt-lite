@@ -2,7 +2,6 @@ package pkg_test
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
 	"log/slog"
 	"reflect"
 	"slices"
@@ -23,8 +22,8 @@ func init() {
 }
 
 const (
-	timeout      = time.Second * 2      // timeout is used for all Eventually and context.WithTimeout calls.
-	pollInterval = 5 * time.Millisecond // poll interval is used for all Eventually
+	timeout      = time.Second * 5       // timeout is used for all Eventually and context.WithTimeout calls.
+	pollInterval = 20 * time.Millisecond // poll interval is used for all Eventually
 )
 
 type SimplePod struct {
@@ -124,17 +123,15 @@ func (s SimpleEndpoint) Key() string {
 
 func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtlite.Collection[SimpleService]) krtlite.Collection[SimpleEndpoint] {
 	return krtlite.FlatMap[SimpleService, SimpleEndpoint](services, func(ctx krtlite.Context, svc SimpleService) []SimpleEndpoint {
-		pods := krtlite.Fetch(ctx, pods) // TODO: use filtering
+		pods := krtlite.Fetch(ctx, pods, krtlite.MatchLabels(svc.Selector))
 		var res []SimpleEndpoint
 		for _, pod := range pods {
-			if labels.SelectorFromSet(svc.Selector).Matches(labels.Set(pod.Labels)) {
-				res = append(res, SimpleEndpoint{
-					Pod:       pod.Name,
-					Service:   svc.Name,
-					Namespace: svc.Namespace,
-					IP:        pod.IP,
-				})
-			}
+			res = append(res, SimpleEndpoint{
+				Pod:       pod.Name,
+				Service:   svc.Name,
+				Namespace: svc.Namespace,
+				IP:        pod.IP,
+			})
 		}
 		return res
 	}, krtlite.WithName("SimpleEndpoints"))

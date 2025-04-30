@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"log/slog"
 	"slices"
 	"testing"
 )
@@ -113,8 +112,8 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 			Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
 		},
 	)
-	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"), krtlite.WithName("Pods"))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"), krtlite.WithName("Services"))
 
 	// assert that collections are equal immediately after waiting for sync.
 	SimplePods := SimplePodCollection(pods)
@@ -434,7 +433,6 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 		}
 
 		slices.Sort(names)
-		slog.Debug("called map handler", "Configs", names, "foos", foos, "bars", bars)
 		return &Result{
 			Named:   NewNamed(i),
 			Configs: names,

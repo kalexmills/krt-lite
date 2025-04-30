@@ -15,6 +15,7 @@ func NewQueue[T any](size int) *Queue[T] {
 		in:  make(chan T),
 		out: make(chan T),
 
+		// newRingBuf is not thread-safe -- this is fine, because we only use it from a single goroutine.
 		queue:   newRingBuf[T](size),
 		running: false,
 	}
