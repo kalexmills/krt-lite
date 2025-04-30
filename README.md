@@ -32,6 +32,3 @@ Writing Kubernetes controllers is easier when you can:
 - [ ] Benchmarking.
 - [ ] Examples.
 - [ ] Documentation.
-
-## Known Issues
-- [ ] cache.WaitForCacheSync polls with an uncontrollable 100ms delay, it should be removed everywhere (also in Informer, if possible).

@@ -2,7 +2,6 @@
 # Makefile targets for CI and local development.
 #
 
-include Makefile.dev
 
 THISFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 
@@ -54,3 +53,10 @@ bench: ## Runs go test with benchmarks.
 list:
 
 
+##
+# Make targets for local development.
+#
+
+.PHONY: run-gh-actions
+run-gh-actions: ## Runs GitHub actions using nektos/act.
+	@act -P linux/amd64=nektos/act-environments-ubuntu:latest --container-architecture linux/amd64 --matrix golang-version:1.23
