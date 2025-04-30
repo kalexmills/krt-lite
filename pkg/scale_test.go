@@ -14,7 +14,6 @@ import (
 
 // TestDetectDroppedEvents ensures that events are not dropped at larger scales.
 func TestDetectDroppedEvents(t *testing.T) {
-
 	const (
 		N       = 100
 		K       = 100 // K cannot be higher than watch.DefaultChanSize, which can't be set with the race detector enabled
