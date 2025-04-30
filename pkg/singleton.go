@@ -5,7 +5,8 @@ import (
 	"sync/atomic"
 )
 
-// NewSingleton creates a Collection containing a single item.
+// NewSingleton creates a Collection containing a single item. Updates to this item must be made manually. Intended
+// use-cases include config which may be live-updated.
 func NewSingleton[T any](initial *T, startSynced bool, opts ...CollectionOption) Singleton[T] {
 	result := newSingleton[T](opts)
 	result.Set(initial)

@@ -30,9 +30,9 @@ type mapIndex[T any] struct {
 	extractor KeyExtractor[T]
 
 	mut     *sync.RWMutex
-	indexed map[string]map[key[T]]struct{}
+	indexed map[string]map[key[T]]struct{} // maps from index keys to a set of collection keys.
 
-	// fetchByKeys is used to fetch keys in-bulk from the parent collection. Parent collection must set this.
+	// fetchByKeys is used to fetch keys in-bulk from the parent collection.
 	fetchByKeys func(map[key[T]]struct{}) []T
 }
 
@@ -50,6 +50,7 @@ func newMapIndex[O any](parent Collection[O], extractor KeyExtractor[O], fetchBy
 func (i *mapIndex[T]) handleEvents(events []Event[T]) {
 	i.mut.Lock()
 	defer i.mut.Unlock()
+
 	for _, ev := range events {
 		oKey := getTypedKey(ev.Latest())
 		if ev.Old != nil {
@@ -60,6 +61,7 @@ func (i *mapIndex[T]) handleEvents(events []Event[T]) {
 				}
 			}
 		}
+		
 		if ev.New != nil {
 			newIndexKeys := i.extractor(*ev.New)
 			for _, idxKey := range newIndexKeys {

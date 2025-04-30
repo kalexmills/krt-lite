@@ -7,9 +7,12 @@ import (
 	"time"
 )
 
-// Syncer is used to indicate that a Collection has synced.
+// Syncer is used to indicate that a Collection has synced. A Collection is synced once it has processed
+// all of its initial state.
 type Syncer interface {
+	// WaitUntilSynced blocks until this Collection has synced
 	WaitUntilSynced(stopCh <-chan struct{}) bool
+	// HasSynced is true if and only if this Collection has synced.
 	HasSynced() bool
 }
 
@@ -29,7 +32,6 @@ func newMultiSyncer(syncers ...Syncer) *multiSyncer {
 	}
 }
 
-// WaitUntilSynced waits until the currently configured syncers have all completed.
 func (c *multiSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 	select {
 	case <-c.synced:

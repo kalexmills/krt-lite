@@ -34,9 +34,9 @@ The queue implemented here is as fast as it is for an additional reason: it is *
 
 package fifo
 
-// minRingbufLen is smallest capacity that a ringbuf may have.
+// MinRingbufLen is the smallest capacity that a ringbuf may have.
 // Must be power of 2 for bitwise modulus: x % n == x & (n - 1).
-const minRingbufLen = 1024
+const MinRingbufLen = 32
 
 // ringbuf represents a single instance of the ringbuf data structure.
 type ringbuf[V any] struct {
@@ -47,7 +47,7 @@ type ringbuf[V any] struct {
 // newRingBuf constructs and returns a new ringbuf.
 func newRingBuf[V any](size int) *ringbuf[V] {
 	return &ringbuf[V]{
-		buf: make([]*V, max(minRingbufLen, size)),
+		buf: make([]*V, max(MinRingbufLen, size)),
 	}
 }
 
@@ -133,7 +133,7 @@ func (q *ringbuf[V]) Remove() V {
 	q.head = (q.head + 1) & (len(q.buf) - 1)
 	q.count--
 	// Resize down if buffer 1/4 full.
-	if len(q.buf) > minRingbufLen && (q.count<<2) == len(q.buf) {
+	if len(q.buf) > MinRingbufLen && (q.count<<2) == len(q.buf) {
 		q.resize()
 	}
 	return *ret

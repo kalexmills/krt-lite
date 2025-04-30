@@ -1,7 +1,7 @@
 package pkg
 
 // MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
-// collection. No guarantee is made regarding -- relying on this behavior is strongly discouraged.
+// collection. Relying on this behavior is strongly discouraged.
 func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collection[T] {
 	return newMergedCollection(cs, opts)
 }
