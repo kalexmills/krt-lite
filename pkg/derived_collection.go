@@ -3,6 +3,7 @@ package pkg
 import (
 	"github.com/kalexmills/krt-lite/pkg/bimap"
 	"github.com/kalexmills/krt-lite/pkg/fifo"
+	"iter"
 	"k8s.io/utils/ptr"
 	"maps"
 	"reflect"
