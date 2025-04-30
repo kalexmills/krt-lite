@@ -1,13 +1,14 @@
-package bimap
+package bimap_test
 
 import (
+	"github.com/kalexmills/krt-lite/pkg/bimap"
 	"github.com/stretchr/testify/assert"
 	"slices"
 	"testing"
 )
 
 func TestBimap(t *testing.T) {
-	bimap := New[int, int]()
+	bimap := bimap.New[int, int]()
 
 	zeroToNine := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 
