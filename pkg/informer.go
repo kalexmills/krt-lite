@@ -176,35 +176,6 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
 	return i.syncer.WaitUntilSynced(stop)
-	//if i.syncer.HasSynced() {
-	//	return true
-	//}
-	//
-	//t0 := time.Now()
-	//
-	//defer func() {
-	//	i.logger().Info("informer synced", "waitTime", time.Since(t0))
-	//}()
-	//
-	//for {
-	//	select {
-	//	case <-stop:
-	//		return false
-	//	default:
-	//	}
-	//	if i.syncer.HasSynced() {
-	//		return true
-	//	}
-	//
-	//	// sleep for 1 second, but return if the stop chan is closed.
-	//	t := time.NewTimer(*i.pollInterval)
-	//	select {
-	//	case <-stop:
-	//		return false
-	//	case <-t.C:
-	//	}
-	//	i.logger().Info("informer waiting for sync", "waitTime", time.Since(t0))
-	//}
 }
 
 func (i *informer[T]) HasSynced() bool {

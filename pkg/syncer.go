@@ -122,10 +122,7 @@ func (s *pollingSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 			return true, nil
 		},
 	)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 func (s *pollingSyncer) HasSynced() bool {

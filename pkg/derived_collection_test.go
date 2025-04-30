@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"log/slog"
 	"slices"
 	"testing"
 )
@@ -434,7 +433,6 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 		}
 
 		slices.Sort(names)
-		slog.Debug("called map handler", "Configs", names, "foos", foos, "bars", bars)
 		return &Result{
 			Named:   NewNamed(i),
 			Configs: names,
