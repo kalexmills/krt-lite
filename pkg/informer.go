@@ -108,7 +108,7 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 
 	go func() {
 		cache.WaitForCacheSync(i.stop, i.inf.HasSynced) // TODO: use our own polling wait instead of WaitForCacheSync
-		i.logger().Debug("informer has synced")
+		i.logger().Debug("informer cache has synced")
 		close(i.synced)
 	}()
 
@@ -175,35 +175,36 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {
-	if i.syncer.HasSynced() {
-		return true
-	}
-
-	t0 := time.Now()
-
-	defer func() {
-		i.logger().Info("informer synced", "waitTime", time.Since(t0))
-	}()
-
-	for {
-		select {
-		case <-stop:
-			return false
-		default:
-		}
-		if i.syncer.HasSynced() {
-			return true
-		}
-
-		// sleep for 1 second, but return if the stop chan is closed.
-		t := time.NewTimer(*i.pollInterval)
-		select {
-		case <-stop:
-			return false
-		case <-t.C:
-		}
-		i.logger().Info("informer waiting for sync", "waitTime", time.Since(t0))
-	}
+	return i.syncer.WaitUntilSynced(stop)
+	//if i.syncer.HasSynced() {
+	//	return true
+	//}
+	//
+	//t0 := time.Now()
+	//
+	//defer func() {
+	//	i.logger().Info("informer synced", "waitTime", time.Since(t0))
+	//}()
+	//
+	//for {
+	//	select {
+	//	case <-stop:
+	//		return false
+	//	default:
+	//	}
+	//	if i.syncer.HasSynced() {
+	//		return true
+	//	}
+	//
+	//	// sleep for 1 second, but return if the stop chan is closed.
+	//	t := time.NewTimer(*i.pollInterval)
+	//	select {
+	//	case <-stop:
+	//		return false
+	//	case <-t.C:
+	//	}
+	//	i.logger().Info("informer waiting for sync", "waitTime", time.Since(t0))
+	//}
 }
 
 func (i *informer[T]) HasSynced() bool {
@@ -211,7 +212,8 @@ func (i *informer[T]) HasSynced() bool {
 }
 
 func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
-	idxKey := fmt.Sprintf("%p", e) // map based on the extractor func.
+	idxKey := fmt.Sprintf("%p", e) // map key is based on the extractor func.
+
 	err := i.inf.AddIndexers(map[string]cache.IndexFunc{
 		idxKey: func(obj any) ([]string, error) {
 			t := extractRuntimeObject[T](obj)
@@ -221,10 +223,11 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 			return e(*t), nil
 		},
 	})
+
 	if err != nil {
 		i.logger().Error("failed to add requested indexer", "err", err)
 	}
-	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e}
+	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e, parentName: i.name}
 }
 
 func indexByNamespaceName(in any) ([]string, error) {

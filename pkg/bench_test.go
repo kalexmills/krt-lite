@@ -123,12 +123,14 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 			}
 		}
 		return result
-	}, krtlite.WithName("Workloads"))
-	Workloads.Register(func(e krtlite.Event[Workload]) {
+	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
+
+	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Event)
 	})
+
 	return &krtliteWrapper{client: c}, func() {
-		Workloads.WaitUntilSynced(ctx.Done())
+		reg.WaitUntilSynced(ctx.Done())
 	}
 }
 
@@ -136,6 +138,7 @@ func BenchmarkController(b *testing.B) {
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 	defer slog.SetLogLoggerLevel(oldLevel)
 	watch.DefaultChanSize = 100_000
+
 	benchmark := func(b *testing.B, fn func(b *testing.B, events chan string) (Client, func())) {
 		slogLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 		defer slog.SetLogLoggerLevel(slogLevel)
@@ -211,6 +214,7 @@ func BenchmarkController(b *testing.B) {
 		}
 		b.Log("events left in channel:", len(events))
 	}
+
 	b.Run("krt", func(b *testing.B) {
 		benchmark(b, KrtController)
 	})

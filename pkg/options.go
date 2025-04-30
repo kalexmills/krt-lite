@@ -22,3 +22,11 @@ func WithPollInterval(interval time.Duration) CollectionOption {
 		m.pollInterval = &interval
 	}
 }
+
+// WithSpuriousUpdates configures collections from Map and FlatMap to send update events downstream even if old and new
+// objects are identical. Has no effect for other collections.
+func WithSpuriousUpdates() CollectionOption {
+	return func(m *collectionShared) {
+		m.wantSpuriousUpdates = true
+	}
+}
