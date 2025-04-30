@@ -17,6 +17,10 @@ func New[U, V comparable]() *BiMap[U, V] {
 	}
 }
 
+func (b *BiMap[U, V]) IsEmpty() bool {
+	return len(b.uv) == 0 && len(b.vu) == 0
+}
+
 // Add associates u with v and v with u.
 func (b *BiMap[U, V]) Add(u U, v V) {
 	if _, ok := b.uv[u]; !ok {
