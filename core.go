@@ -226,7 +226,7 @@ func nextDependencyUID() uint64 {
 }
 
 // A Keyer is an object which can be identified by a unique key. It should be implemented by custom types which are
-// placed in Collections. All items in a collection must have a unique key
+// placed in Collections. All items in a collection must have a unique key.
 type Keyer interface {
 	Key() string
 }
