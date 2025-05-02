@@ -315,7 +315,6 @@ func newKontext[I, O any](collection *derivedCollection[I, O], iKey key[I]) *kon
 func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) bool {
 	// register a watch on the parent collection, unless we already have one
 	if _, ok := ktx.collection.collectionDependencies[d.collectionID]; !ok {
-
 		l := ktx.collection.logger().With("fromCollectionName", d.collectionName, "fromCollectionID", d.collectionID)
 
 		l.Debug("registering dependency")
