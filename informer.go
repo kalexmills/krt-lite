@@ -1,4 +1,4 @@
-package pkg
+package krtlite
 
 import (
 	"context"
@@ -19,12 +19,16 @@ import (
 
 const keyIdx = "namespace/name"
 
-// NewInformer returns a Collection[T] backed by an informer which uses the provided controller-runtime Client. Caller
-// must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
-// *corev1.Pods, TL must be *corev1.PodList. TL must implement client.ObjectList.
+// NewInformer returns a [Collection] backed by an informer based on the provided [client.WithWatch]. Callers must
+// ensure that if T denotes a [runtime.Object], then TL denotes the corresponding list object. For example, if T is
+// *corev1.Pods, TL must be corev1.PodList. *TL must implement client.ObjectList.
 //
-// Objects in this Collection will have keys of the form "{namespace}/{name}".
-func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
+// Objects in this Collection will have keys in the format {namespace}/{name}, or {name} for cluster-scoped objects.
+//
+// Callers need only specify the first two type arguments. For example:
+//
+//	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](...)
+func NewInformer[T ComparableObject, TL any, PT Ptr[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			tl := PT(new(TL))
@@ -44,40 +48,17 @@ func NewInformer[T ComparableObject, TL any, PT ptrTL[TL]](ctx context.Context, 
 	}, opts...)
 }
 
-// ptrTL exists to allow pointers to be instantiated.
-type ptrTL[T any] interface {
+// Ptr allows pointers to be instantiated in generic types.
+type Ptr[T any] interface {
 	*T
 	client.ObjectList
 }
 
-func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
-	var result []client.ListOption
-	if opts.Limit > 0 {
-		result = append(result, client.Limit(opts.Limit))
-	}
-	if opts.Continue != "" {
-		result = append(result, client.Continue(opts.Continue))
-	}
-	if opts.LabelSelector != "" {
-		ls, err := labels.Parse(opts.LabelSelector)
-		if err == nil {
-			result = append(result, client.MatchingLabelsSelector{Selector: ls})
-		}
-	}
-	if opts.FieldSelector != "" {
-		fs, err := fields.ParseSelector(opts.FieldSelector)
-		if err == nil {
-			result = append(result, client.MatchingFieldsSelector{Selector: fs})
-		}
-	}
-	return result
-}
-
-// NewTypedClientInformer returns a Collection[T] backed by an Informer created from the passed TypedClient. Caller
-// must ensure that if T denotes a runtime.Object, then TL denotes the corresponding list object. For example, if T is
-// *corev1.Pods, TL must be *corev1.PodList. TL must implement client.ObjectList.
+// NewTypedClientInformer returns a Collection[T] backed by an Informer created from the passed TypedClient. Callers
+// must ensure that if T denotes a [runtime.Object], then TL denotes the corresponding list object. For example, if T is
+// *corev1.Pods, TL must be corev1.PodList. *TL must implement client.ObjectList.
 //
-// Objects in this Collection will have keys of the form "{namespace}/{name}".
+// All objects in this Collection will have keys in the format {namespace}/{name}, or {name} for cluster-scoped objects.
 func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
@@ -89,10 +70,10 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 	}, opts...)
 }
 
-// NewListerWatcherInformer creates a new Collection from items returned by hte provided cache.ListerWatcher.
-// Caller must ensure the provided ListerWatcher does not return objects of type T.
+// NewListerWatcherInformer creates a new Collection from items returned by the provided cache.ListerWatcher, which
+// must return objects of type T.
 //
-// Objects in this Collection will have keys of the form "{namespace}/{name}".
+// Objects in this Collection will have keys in the format [{namespace}/{name}, or {name} for cluster-scoped objects.
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),
@@ -250,29 +231,52 @@ type eventHandler[T runtime.Object] struct {
 
 func (e eventHandler[T]) OnAdd(obj any, isInInitialList bool) {
 	e.handler(Event[T]{
-		New:   extractRuntimeObject[T](obj),
-		Event: EventAdd,
+		New:  extractRuntimeObject[T](obj),
+		Type: EventAdd,
 	}, isInInitialList)
 }
 
 func (e eventHandler[T]) OnUpdate(oldObj, newObj any) {
 	e.handler(Event[T]{
-		Old:   extractRuntimeObject[T](oldObj),
-		New:   extractRuntimeObject[T](newObj),
-		Event: EventUpdate,
+		Old:  extractRuntimeObject[T](oldObj),
+		New:  extractRuntimeObject[T](newObj),
+		Type: EventUpdate,
 	}, false)
 }
 
 func (e eventHandler[T]) OnDelete(obj any) {
 	e.handler(Event[T]{
-		Old:   extractRuntimeObject[T](obj),
-		Event: EventDelete,
+		Old:  extractRuntimeObject[T](obj),
+		Type: EventDelete,
 	}, false)
 }
 
 func zero[T comparable]() T {
 	var z T
 	return z
+}
+
+func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
+	var result []client.ListOption
+	if opts.Limit > 0 {
+		result = append(result, client.Limit(opts.Limit))
+	}
+	if opts.Continue != "" {
+		result = append(result, client.Continue(opts.Continue))
+	}
+	if opts.LabelSelector != "" {
+		ls, err := labels.Parse(opts.LabelSelector)
+		if err == nil {
+			result = append(result, client.MatchingLabelsSelector{Selector: ls})
+		}
+	}
+	if opts.FieldSelector != "" {
+		fs, err := fields.ParseSelector(opts.FieldSelector)
+		if err == nil {
+			result = append(result, client.MatchingFieldsSelector{Selector: fs})
+		}
+	}
+	return result
 }
 
 // extractRuntimeObject retrieves a runtime.Object from its argument.

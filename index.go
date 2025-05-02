@@ -1,6 +1,7 @@
-package pkg
+package krtlite
 
 import (
+	_ "k8s.io/apimachinery/pkg/runtime"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ func NewNamespaceIndex[T GetNamespacer](c IndexableCollection[T]) Index[T] {
 	})
 }
 
-// GetNamespacer is implemented by most runtime.Object.
+// GetNamespacer is implemented by objects that have a namespace, i.e. most Kubernetes objects.
 type GetNamespacer interface {
 	GetNamespace() string
 }
@@ -61,7 +62,7 @@ func (i *mapIndex[T]) handleEvents(events []Event[T]) {
 				}
 			}
 		}
-		
+
 		if ev.New != nil {
 			newIndexKeys := i.extractor(*ev.New)
 			for _, idxKey := range newIndexKeys {

@@ -1,8 +1,8 @@
-package pkg
+package krtlite
 
 import (
-	"github.com/kalexmills/krt-lite/pkg/bimap"
-	"github.com/kalexmills/krt-lite/pkg/fifo"
+	"github.com/kalexmills/krt-lite/bimap"
+	"github.com/kalexmills/krt-lite/fifo"
 	"iter"
 	"k8s.io/utils/ptr"
 	"maps"
@@ -15,8 +15,8 @@ import (
 // once before creating any collections to avoid data races. Must be a power of 2.
 var BufferSize = 1024
 
-// Map creates a new Collection by calling the provided [Mapper] on each item in c. The returned Collection will be kept
-// in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
+// Map creates a new Collection by calling the provided [Mapper] on each item in c. The result Collection will be kept
+// in sync with c -- every event from c triggers the handler to update the corresponding item in the result.
 // Collection.
 //
 // By default, if running the Mapper results in an identical object, no update event will be sent to downstream
@@ -34,9 +34,8 @@ func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOpti
 	return FlatMap(c, ff, opts...)
 }
 
-// FlatMap creates a new Collection by calling the provided [FlatMapper] on each item in C. Unlike Map, each item in
-// Collection c may result in zero or more items in the returned Collection. The returned Collection is kept in sync
-// with c. See Map for details.
+// FlatMap creates a new Collection by calling the provided [FlatMapper] on each item in c. FlatMap allows mapping each
+// item in a collection to zero or more items. The result Collection is kept in sync with c. See [Map] for details.
 //
 // By default, update events are not retriggered when FlatMapper produces identical objects for the same key.
 // Passing [WithSpuriousUpdates] disables this behavior.
@@ -246,7 +245,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	recomputed := make([]map[key[O]]O, len(inputs))
 	pendingContexts := make(map[key[I]]*kontext[I, O], len(inputs))
 	for idx, input := range inputs {
-		if input.Event == EventDelete {
+		if input.Type == EventDelete {
 			continue
 		}
 		i := input.Latest()
@@ -269,15 +268,15 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		iKey := getTypedKey(i)
 
 		// plumb input events to output events
-		if input.Event == EventDelete {
+		if input.Type == EventDelete {
 			for oKey := range c.mappings[iKey] {
 				old, ok := c.outputs[oKey]
 				if !ok {
 					continue
 				}
 				outputEvents = append(outputEvents, Event[O]{
-					Event: EventDelete,
-					Old:   &old,
+					Type: EventDelete,
+					Old:  &old,
 				})
 				delete(c.outputs, oKey)
 			}
@@ -306,16 +305,16 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 					if !c.wantSpuriousUpdates && reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
 						continue
 					}
-					ev.Event = EventUpdate
+					ev.Type = EventUpdate
 					ev.New = &newRes
 					ev.Old = &oldRes
 					c.outputs[key] = newRes
 				} else if newOK {
-					ev.Event = EventAdd
+					ev.Type = EventAdd
 					ev.New = &newRes
 					c.outputs[key] = newRes
 				} else {
-					ev.Event = EventDelete
+					ev.Type = EventDelete
 					ev.Old = &oldRes
 					delete(c.outputs, key)
 				}
@@ -363,8 +362,8 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 		} else {
 			// we let handleEvents fetch Old for us.
 			res = append(res, Event[I]{
-				Event: EventUpdate,
-				New:   iObj,
+				Type: EventUpdate,
+				New:  iObj,
 			})
 		}
 	}
@@ -376,8 +375,8 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 				continue
 			}
 			e := Event[I]{
-				Event: EventDelete,
-				Old:   ptr.To(c.inputs[iKey]),
+				Type: EventDelete,
+				Old:  ptr.To(c.inputs[iKey]),
 			}
 			res = append(res, e)
 		}
@@ -428,7 +427,7 @@ func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, 
 		// if this key exceeded its max track count, reset tracking information for this key so all dependencies are
 		// checked during updates.
 		if _, ok := ktx.resetTracking[dep.dependencyID]; ok {
-			depMap.RemoveU(iKey)
+			depMap.RemoveLeft(iKey)
 			continue
 		}
 
@@ -443,7 +442,7 @@ func (c *derivedCollection[I, O]) dependencyDelete(iKey key[I]) {
 	for _, dep := range c.dependencies[iKey] {
 		depID := dep.dependencyID
 
-		c.depMaps[depID].RemoveU(iKey)
+		c.depMaps[depID].RemoveLeft(iKey)
 		if c.depMaps[depID].IsEmpty() {
 			delete(c.depMaps, depID)
 		}
@@ -458,8 +457,8 @@ func (c *derivedCollection[I, O]) snapshotInitialState() []Event[O] {
 	events := make([]Event[O], 0, len(c.outputs))
 	for _, o := range c.outputs {
 		events = append(events, Event[O]{
-			New:   &o,
-			Event: EventAdd,
+			New:  &o,
+			Type: EventAdd,
 		})
 	}
 	return events

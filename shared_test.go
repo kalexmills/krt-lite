@@ -1,4 +1,4 @@
-package pkg_test
+package krtlite_test
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -181,7 +181,7 @@ func NewTracker[T any](t *testing.T) tracker[T] {
 func (t *tracker[T]) Track(e krtlite.Event[T]) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
-	key := fmt.Sprintf("%v/%s", e.Event, krtlite.GetKey(e.Latest()))
+	key := fmt.Sprintf("%v/%s", e.Type, krtlite.GetKey(e.Latest()))
 	t.events[key] = struct{}{}
 }
 

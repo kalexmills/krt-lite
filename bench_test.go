@@ -1,9 +1,9 @@
-package pkg_test
+package krtlite_test
 
 import (
 	"context"
 	"fmt"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/kclient/clienttest"
 	"istio.io/istio/pkg/kube/krt"
@@ -126,7 +126,7 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
-		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Event)
+		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
 	return &krtliteWrapper{client: c}, func() {

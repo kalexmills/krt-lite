@@ -1,9 +1,9 @@
-package pkg_test
+package krtlite_test
 
 import (
 	"context"
 	"fmt"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log/slog"
@@ -89,7 +89,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
-		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Event)
+		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
 	reg.WaitUntilSynced(ctx.Done())

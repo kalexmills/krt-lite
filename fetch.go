@@ -1,4 +1,4 @@
-package pkg
+package krtlite
 
 import (
 	"fmt"
@@ -161,9 +161,6 @@ func (d *dependency) Matches(object any) bool {
 // configured will not be tracked. For keys without tracking information, a full scan of the collection is performed
 // for each fetched item when updates occur.
 func WithMaxTrackCount(maxKeys uint) FetchOption {
-	if maxKeys <= 0 {
-		panic("maxKeys must be > 0")
-	}
 	return func(d *dependency) {
 		d.maxTrackCount = ptr.To(maxKeys)
 	}
@@ -196,7 +193,7 @@ func MatchLabels(labels map[string]string) FetchOption {
 
 // MatchSelectsLabels ensures [Fetch] only returns objects that would select objects with the provided set of labels.
 // Caller must provide an extractor which retrieves [labels.Selector] implementations from objects in the target
-// collection. See [ExtractPodSelector].
+// collection. Returning nil from a SelectorExtractor ensures that object will never be returned from [Fetch].
 //
 // Panics will occur in case multiple MatchSelectsLabels options are passed to the same invocation of [Fetch].
 func MatchSelectsLabels(labels map[string]string, extractor SelectorExtractor) FetchOption {
@@ -350,7 +347,7 @@ func (ktx *kontext[I, O]) resetTrackingForCollection(collID uint64) {
 
 func castEvent[I, O any](o Event[I]) Event[O] {
 	e := Event[O]{
-		Event: o.Event,
+		Type: o.Type,
 	}
 	if o.Old != nil {
 		e.Old = ptr.To(any(*o.Old).(O))
@@ -361,8 +358,8 @@ func castEvent[I, O any](o Event[I]) Event[O] {
 	return e
 }
 
-// SelectorExtractor can extract a [labels.Selector] from objects in a collection. If nil is returned for any object, it
-// will always match nothing.
+// SelectorExtractor can extract a [labels.Selector] from objects in a collection. Intended for use with
+// [MatchSelectsLabels].
 type SelectorExtractor func(any) labels.Selector
 
 // ExtractPodSelector knows how to retrieve pod label selectors from many common Kubernetes objects, and any

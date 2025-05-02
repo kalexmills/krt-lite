@@ -2,7 +2,7 @@ package fifo_test
 
 import (
 	"fmt"
-	"github.com/kalexmills/krt-lite/pkg/fifo"
+	"github.com/kalexmills/krt-lite/fifo"
 	"sync"
 	"testing"
 	"time"

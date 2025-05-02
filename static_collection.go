@@ -1,4 +1,4 @@
-package pkg
+package krtlite
 
 import (
 	"maps"
@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// A StaticCollection contains elements which are not derived from other Collections. It is intended to be used to tie
-// events from other systems into KRT.
+// A StaticCollection contains elements which are not derived from other Collections, or from an Informer. It is
+// intended to be used to allow events from other systems to be tied into krt-lite.
 type StaticCollection[T any] interface {
 	IndexableCollection[T]
 
@@ -34,9 +34,9 @@ type staticList[T any] struct {
 var _ StaticCollection[any] = &staticList[any]{}
 
 // NewStaticCollection returns a StaticCollection containing the provided list of values. If a nil Syncer
-// is passed, the collection starts as synced. Otherwise, the provided Syncer is used to determine when this
-// StaticCollection has seen all of its initial state. Caller is responsible for ensuring the Syncer passed eventually
-// syncs -- failing to do so will prevent downstream Collections from starting.
+// is passed, the collection is considered synced on creation. Otherwise, the provided Syncer is used to determine when
+// this StaticCollection has seen all of its initial state. Caller is responsible for ensuring the Syncer passed
+// eventually syncs -- failing to do so will prevent downstream Collections from starting.
 func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOption) StaticCollection[T] {
 	if synced == nil {
 		synced = alwaysSynced{}
@@ -100,8 +100,8 @@ func (s *staticList[T]) snapshotInitialState() []Event[T] {
 	evs := make([]Event[T], 0, len(s.vals))
 	for _, v := range s.vals {
 		evs = append(evs, Event[T]{
-			New:   &v,
-			Event: EventAdd,
+			New:  &v,
+			Type: EventAdd,
 		})
 	}
 	return evs
@@ -155,14 +155,14 @@ func (s *staticList[T]) Update(obj T) {
 	s.vals[k] = obj
 	if ok {
 		s.distributeEvents([]Event[T]{{
-			Old:   &old,
-			New:   &obj,
-			Event: EventUpdate,
+			Old:  &old,
+			New:  &obj,
+			Type: EventUpdate,
 		}})
 	} else {
 		s.distributeEvents([]Event[T]{{
-			New:   &obj,
-			Event: EventAdd,
+			New:  &obj,
+			Type: EventAdd,
 		}})
 	}
 }
@@ -174,8 +174,8 @@ func (s *staticList[T]) Delete(key string) {
 	if ok {
 		delete(s.vals, key)
 		s.distributeEvents([]Event[T]{{
-			Old:   &old,
-			Event: EventDelete,
+			Old:  &old,
+			Type: EventDelete,
 		}})
 	}
 }
@@ -188,8 +188,8 @@ func (s *staticList[T]) DeleteFunc(filter func(T) bool) {
 		if filter(v) {
 			delete(s.vals, k)
 			removed = append(removed, Event[T]{
-				Old:   &v,
-				Event: EventDelete,
+				Old:  &v,
+				Type: EventDelete,
 			})
 		}
 	}
