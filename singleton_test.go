@@ -1,9 +1,9 @@
-package pkg_test
+package krt_lite_test
 
 import (
 	"testing"
 
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
 )

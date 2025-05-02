@@ -1,8 +1,8 @@
-package pkg_test
+package krt_lite_test
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"

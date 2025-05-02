@@ -1,8 +1,8 @@
-package pkg
+package krt_lite
 
 import (
-	"github.com/kalexmills/krt-lite/pkg/bimap"
-	"github.com/kalexmills/krt-lite/pkg/fifo"
+	"github.com/kalexmills/krt-lite/bimap"
+	"github.com/kalexmills/krt-lite/fifo"
 	"iter"
 	"k8s.io/utils/ptr"
 	"maps"

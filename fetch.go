@@ -1,4 +1,4 @@
-package pkg
+package krt_lite
 
 import (
 	"fmt"

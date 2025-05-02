@@ -1,7 +1,7 @@
 package bimap_test
 
 import (
-	"github.com/kalexmills/krt-lite/pkg/bimap"
+	"github.com/kalexmills/krt-lite/bimap"
 	"github.com/stretchr/testify/assert"
 	"slices"
 	"testing"

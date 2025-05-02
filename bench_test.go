@@ -1,9 +1,9 @@
-package pkg_test
+package krt_lite_test
 
 import (
 	"context"
 	"fmt"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/kclient/clienttest"
 	"istio.io/istio/pkg/kube/krt"

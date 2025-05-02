@@ -1,4 +1,4 @@
-package pkg
+package krt_lite
 
 // MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
 // collection. Relying on this behavior is strongly discouraged.

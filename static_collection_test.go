@@ -1,8 +1,8 @@
-package pkg_test
+package krt_lite_test
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

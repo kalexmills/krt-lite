@@ -1,4 +1,4 @@
-package pkg_test
+package krt_lite_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

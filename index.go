@@ -1,4 +1,4 @@
-package pkg
+package krt_lite
 
 import (
 	"sync"
@@ -61,7 +61,7 @@ func (i *mapIndex[T]) handleEvents(events []Event[T]) {
 				}
 			}
 		}
-		
+
 		if ev.New != nil {
 			newIndexKeys := i.extractor(*ev.New)
 			for _, idxKey := range newIndexKeys {
