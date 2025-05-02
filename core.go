@@ -111,6 +111,39 @@ type Singleton[T any] interface {
 	MarkSynced()
 }
 
+// A CollectionOption specifies optional ways collections may behave.
+type CollectionOption func(m *collectionShared)
+
+// WithName provides a name to the collection for use in debugging and logging.
+func WithName(name string) CollectionOption {
+	return func(m *collectionShared) {
+		m.name = name
+	}
+}
+
+// WithStop provides a stop channel. When the provided channel is closed, the collection will shut down and stop sending
+// updates to dependent collections.
+func WithStop(stop <-chan struct{}) CollectionOption {
+	return func(m *collectionShared) {
+		m.stop = stop
+	}
+}
+
+// WithPollInterval configures the poll interval used by Informers. Has no effect for other collections.
+func WithPollInterval(interval time.Duration) CollectionOption {
+	return func(m *collectionShared) {
+		m.pollInterval = &interval
+	}
+}
+
+// WithSpuriousUpdates configures collections from Map and FlatMap to send update events downstream even if old and new
+// objects are identical. Has no effect for other collections.
+func WithSpuriousUpdates() CollectionOption {
+	return func(m *collectionShared) {
+		m.wantSpuriousUpdates = true
+	}
+}
+
 // collectionShared contains metadata and fields common to controllers.
 type collectionShared struct {
 	uid                 uint64
@@ -144,9 +177,6 @@ func newCollectionShared(options []CollectionOption) collectionShared {
 	}
 	return *meta
 }
-
-// A CollectionOption specifies optional ways collections may behave.
-type CollectionOption func(m *collectionShared)
 
 // A FetchOption modifies how calls to Fetch work.
 type FetchOption func(m *dependency)
