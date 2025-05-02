@@ -1,13 +1,12 @@
 package krt_lite
 
-// MergeDisjoint merges multiple collections into one. Items with duplicate keys will race for their presence in the
-// collection. Relying on this behavior is strongly discouraged.
+// MergeDisjoint merges several collections into one. Merge collections with overlapping keysets is not supported by
+// this collection, and results in undefined behavior.
 func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collection[T] {
 	return newMergedCollection(cs, opts)
 }
 
-// MergeIndexableDisjoint is identical to MergeDisjoint, except that the resulting collection is Indexable. Relies on
-// all parent collections being indexable.
+// MergeIndexableDisjoint is identical to MergeDisjoint, except it creates an IndexableCollection.
 func MergeIndexableDisjoint[T any](cs []IndexableCollection[T], opts ...CollectionOption) IndexableCollection[T] {
 	castCs := make([]Collection[T], 0, len(cs))
 	for _, c := range cs {

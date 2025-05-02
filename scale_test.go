@@ -89,7 +89,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
-		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Event)
+		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
 	reg.WaitUntilSynced(ctx.Done())

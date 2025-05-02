@@ -9,7 +9,8 @@ func WithName(name string) CollectionOption {
 	}
 }
 
-// WithStop provides a stop channel which can be closed to shut the collection down.
+// WithStop provides a stop channel. When the provided channel is closed, the collection will shut down and stop sending
+// updates to dependent collections.
 func WithStop(stop <-chan struct{}) CollectionOption {
 	return func(m *collectionShared) {
 		m.stop = stop

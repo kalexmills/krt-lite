@@ -5,65 +5,69 @@ import (
 	"maps"
 )
 
-type BiMap[U, V comparable] struct {
-	uv map[U]map[V]struct{}
-	vu map[V]map[U]struct{}
+// A BiMap tracks a bidirectional mapping between two sets, referred to as "Left" and "Right".
+type BiMap[L, R comparable] struct {
+	leftToRight map[L]map[R]struct{}
+	rightToLeft map[R]map[L]struct{}
 }
 
-func New[U, V comparable]() *BiMap[U, V] {
-	return &BiMap[U, V]{
-		uv: make(map[U]map[V]struct{}, 16),
-		vu: make(map[V]map[U]struct{}, 16),
+// New constructs a new empty BiMap.
+func New[L, R comparable]() *BiMap[L, R] {
+	return &BiMap[L, R]{
+		leftToRight: make(map[L]map[R]struct{}, 16),
+		rightToLeft: make(map[R]map[L]struct{}, 16),
 	}
 }
 
-func (b *BiMap[U, V]) IsEmpty() bool {
-	return len(b.uv) == 0 && len(b.vu) == 0
+// IsEmpty returns true if no items are contained in this BiMap.
+func (b *BiMap[L, R]) IsEmpty() bool {
+	return len(b.leftToRight) == 0 && len(b.rightToLeft) == 0
 }
 
-// Add associates u with v and v with u.
-func (b *BiMap[U, V]) Add(u U, v V) {
-	if _, ok := b.uv[u]; !ok {
-		b.uv[u] = map[V]struct{}{v: {}}
+// Add associates l with r and r with l.
+func (b *BiMap[L, R]) Add(l L, r R) {
+	if _, ok := b.leftToRight[l]; !ok {
+		b.leftToRight[l] = map[R]struct{}{r: {}}
 	} else {
-		b.uv[u][v] = struct{}{}
+		b.leftToRight[l][r] = struct{}{}
 	}
 
-	if _, ok := b.vu[v]; !ok {
-		b.vu[v] = map[U]struct{}{u: {}}
+	if _, ok := b.rightToLeft[r]; !ok {
+		b.rightToLeft[r] = map[L]struct{}{l: {}}
 	} else {
-		b.vu[v][u] = struct{}{}
+		b.rightToLeft[r][l] = struct{}{}
 	}
 }
 
-// RemoveU removes u from the bidirectional mapping.
-func (b *BiMap[U, V]) RemoveU(u U) {
-	for v := range b.uv[u] {
-		delete(b.vu[v], u)
-		if len(b.vu[v]) == 0 {
-			delete(b.vu, v)
+// RemoveLeft removes its argument from the "Left" set.
+func (b *BiMap[L, R]) RemoveLeft(l L) {
+	for r := range b.leftToRight[l] {
+		delete(b.rightToLeft[r], l)
+		if len(b.rightToLeft[r]) == 0 {
+			delete(b.rightToLeft, r)
 		}
 	}
-	delete(b.uv, u)
+	delete(b.leftToRight, l)
 }
 
-// RemoveV removes v from the bidirectional mapping.
-func (b *BiMap[U, V]) RemoveV(v V) {
-	for u := range b.vu[v] {
-		delete(b.uv[u], v)
-		if len(b.uv[u]) == 0 {
-			delete(b.uv, u)
+// RemoveRight removes its argument from the "Right" set.
+func (b *BiMap[L, R]) RemoveRight(r R) {
+	for l := range b.rightToLeft[r] {
+		delete(b.leftToRight[l], r)
+		if len(b.leftToRight[l]) == 0 {
+			delete(b.leftToRight, l)
 		}
 	}
-	delete(b.vu, v)
+
+	delete(b.rightToLeft, r)
 }
 
-// GetVs returns an iterator over all Vs mapped by the provided U.
-func (b *BiMap[U, V]) GetVs(u U) iter.Seq[V] {
-	return maps.Keys(b.uv[u])
+// GetVs returns an iterator over all items in the Right set which are mapped to by its argument.
+func (b *BiMap[L, R]) GetVs(l L) iter.Seq[R] {
+	return maps.Keys(b.leftToRight[l])
 }
 
-// GetUs returns an iterator over all Us mapped by the provided V.
-func (b *BiMap[U, V]) GetUs(v V) iter.Seq[U] {
-	return maps.Keys(b.vu[v])
+// GetUs returns an iterator over all items in the Left set which are mapped to by its argument.
+func (b *BiMap[L, R]) GetUs(r R) iter.Seq[L] {
+	return maps.Keys(b.rightToLeft[r])
 }

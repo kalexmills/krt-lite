@@ -181,7 +181,7 @@ func NewTracker[T any](t *testing.T) tracker[T] {
 func (t *tracker[T]) Track(e krtlite.Event[T]) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
-	key := fmt.Sprintf("%v/%s", e.Event, krtlite.GetKey(e.Latest()))
+	key := fmt.Sprintf("%v/%s", e.Type, krtlite.GetKey(e.Latest()))
 	t.events[key] = struct{}{}
 }
 

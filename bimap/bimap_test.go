@@ -28,7 +28,7 @@ func TestBimap(t *testing.T) {
 	}
 
 	for j := 0; j < 10; j++ {
-		bimap.RemoveU(j)
+		bimap.RemoveLeft(j)
 
 		for i := j + 1; i < 10; i++ {
 			assert.Equal(t, zeroToNine, slices.Sorted(bimap.GetVs(i)))

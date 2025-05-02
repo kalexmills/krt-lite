@@ -16,7 +16,7 @@ type (
 	// A FlatMapper maps its input to zero or more output values.
 	FlatMapper[I, O any] func(ktx Context, i I) []O
 
-	// A KeyExtractor is used to extractRuntimeObject mapIndex keys from an object.
+	// A KeyExtractor is used to index objects by additional keys. See [IndexableCollection.Index] for details.
 	KeyExtractor[T any] func(t T) []string
 )
 
@@ -26,15 +26,13 @@ type (
 // An EventStream is synced when it has received an EventAdd notification for every item.
 type EventStream[T any] interface {
 
-	// Register subscribes to this EventStream, ensuring the handler is called exactly once for every event. The caller
-	// will receive an add Events for each initial state.
-	//
-	// Upon registration, the event stream snapshots current state and generates an add event for every known item.
-	// These additional events ensure the caller is synchronized with the initial state. The returned Syncer reports
-	// when all initial add events have been sent.
+	// Register subscribes to this EventStream, ensuring the handler is called exactly once for every event.
+	// Upon registration, the event stream snapshots current state and generates an add event for every item in the
+	// collection. These additional events ensure the caller is synchronized with the initial state. The returned
+	// Registration reports when all initial add events have been sent.
 	//
 	// The following semantics govern handlers:
-	//  * Update events which result in identical objects are suppressed.
+	//  * Update events which result in identical objects are suppressed by default (see [WithSpuriousUpdates]).
 	//  * On each event, all handlers are called.
 	//  * Each handler has its own unbounded event queue. Slow handlers may cause items to accumulate but will not
 	//    block other handlers.
@@ -47,21 +45,23 @@ type EventStream[T any] interface {
 	//
 	// When runExistingState is true, the event stream snapshots current state and sends an add Event for every known
 	// item. The returned Registration reports when all initial add events have been sent.
+	//
+	// Handlers follow the same semantics as Register.
 	RegisterBatched(handler func(o []Event[T]), runExistingState bool) Registration
-
-	// WaitUntilSynced blocks until this EventStream has received all initial state from upstream. If the provided
-	// channel is closed, this func returns false immediately. Returns true if and only if sync was successful.
-	WaitUntilSynced(stop <-chan struct{}) bool
 
 	// HasSynced returns true if this EventStream has received all its initial state from upstream.
 	HasSynced() bool
+
+	// WaitUntilSynced blocks until this EventStream has received all initial state from upstream. Stops blocking and
+	// returns false if the passed channel is closed. Returns true if and only if sync was successful.
+	WaitUntilSynced(stop <-chan struct{}) bool
 }
 
 // An IndexableCollection is a Collection which supports building additional Indexes on its contents.
 type IndexableCollection[T any] interface {
 	Collection[T]
 
-	// Index returns an index built using the provided KeyExtractor.
+	// Index indexes items in this collection by keys produced by the provided KeyExtractor.
 	Index(extractor KeyExtractor[T]) Index[T]
 }
 
@@ -176,19 +176,19 @@ func (e EventType) String() string {
 	return "unknown"
 }
 
-// Event describes a mutation to a collection.
+// An Event describes a mutation to a collection.
 type Event[T any] struct {
-	// Old denotes the old value of the item. Will be nil when Event == EventAdd.
+	// Old denotes the old value of the item. Will be nil when Type == EventAdd.
 	Old *T
-	// New denotes the new value of the item. Will be nil when Event == EventDelete
+	// New denotes the new value of the item. Will be nil when Type == EventDelete
 	New *T
-	// Event denotes the type of mutation which occurred.
-	Event EventType
+	// Type denotes the type of mutation which occurred.
+	Type EventType
 }
 
 // String returns a string representation of this event.
 func (e Event[T]) String() string {
-	return fmt.Sprintf("%v [old = %v, new = %v]", e.Event, e.Old, e.New)
+	return fmt.Sprintf("%v [old = %v, new = %v]", e.Type, e.Old, e.New)
 }
 
 // Latest returns the most recent value of the item.
@@ -225,12 +225,13 @@ func nextDependencyUID() uint64 {
 	return globalDependencyUIDCounter.Add(1)
 }
 
-// Keyer is implemented by any type which can have a key.
+// A Keyer is an object which can be identified by a unique key. It should be implemented by custom types which are
+// placed in Collections. All items in a collection must have a unique key
 type Keyer interface {
 	Key() string
 }
 
-// GetKey infers a string key for the passed in value. Panics if its argument is not one of the following types.
+// GetKey infers a string key for its argument. Will panic if its argument is not one of the following types.
 //   - runtime.Object
 //   - string
 //   - Keyer

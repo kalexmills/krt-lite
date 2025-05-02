@@ -53,7 +53,7 @@ func TestIndex(t *testing.T) {
 				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c)
 				var col krtlite.StaticCollection[*corev1.ConfigMap]
 				reg := inf.Register(func(o krtlite.Event[*corev1.ConfigMap]) {
-					switch o.Event {
+					switch o.Type {
 					case krtlite.EventAdd, krtlite.EventUpdate:
 						col.Update(o.Latest())
 					case krtlite.EventDelete:

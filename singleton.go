@@ -70,8 +70,8 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 		v := s.val.Load()
 		if v != nil {
 			go f([]Event[T]{{ // call handler on another thread to avoid deadlocks.
-				New:   v,
-				Event: EventAdd,
+				New:  v,
+				Type: EventAdd,
 			}})
 		}
 	}
@@ -117,21 +117,21 @@ func (s *singleton[T]) Set(now *T) {
 	var ev Event[T]
 	if old == nil {
 		ev = Event[T]{
-			New:   now,
-			Event: EventAdd,
+			New:  now,
+			Type: EventAdd,
 		}
 		s.currKey = GetKey(*now)
 	} else if now == nil {
 		ev = Event[T]{
-			Old:   old,
-			Event: EventDelete,
+			Old:  old,
+			Type: EventDelete,
 		}
 		s.currKey = ""
 	} else {
 		ev = Event[T]{
-			New:   now,
-			Old:   old,
-			Event: EventUpdate,
+			New:  now,
+			Old:  old,
+			Type: EventUpdate,
 		}
 		s.currKey = GetKey(*now)
 	}
