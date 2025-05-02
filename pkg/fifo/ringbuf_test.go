@@ -31,12 +31,12 @@ package fifo //nolint: testpackage // needs private
 import "testing"
 
 func TestQueueSimple(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
-	for i := 0; i < MinRingbufLen; i++ {
+	for i := 0; i < 32; i++ {
 		q.Add(i)
 	}
-	for i := 0; i < MinRingbufLen; i++ {
+	for i := 0; i < 32; i++ {
 		if q.Peek() != i {
 			t.Error("peek", i, "had value", q.Peek())
 		}
@@ -48,17 +48,17 @@ func TestQueueSimple(t *testing.T) {
 }
 
 func TestQueueWrapping(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
-	for i := 0; i < MinRingbufLen; i++ {
+	for i := 0; i < 32; i++ {
 		q.Add(i)
 	}
 	for i := 0; i < 3; i++ {
 		q.Remove()
-		q.Add(MinRingbufLen + i)
+		q.Add(32 + i)
 	}
 
-	for i := 0; i < MinRingbufLen; i++ {
+	for i := 0; i < 32; i++ {
 		if q.Peek() != i+3 {
 			t.Error("peek", i, "had value", q.Peek())
 		}
@@ -67,7 +67,7 @@ func TestQueueWrapping(t *testing.T) {
 }
 
 func TestQueueLength(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
 	if q.Len() != 0 {
 		t.Error("empty queue length not 0")
@@ -88,7 +88,7 @@ func TestQueueLength(t *testing.T) {
 }
 
 func TestQueueGet(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
 	for i := 0; i < 1000; i++ {
 		q.Add(i)
@@ -101,7 +101,7 @@ func TestQueueGet(t *testing.T) {
 }
 
 func TestQueueGetNegative(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
 	for i := 0; i < 1000; i++ {
 		q.Add(i)
@@ -114,7 +114,7 @@ func TestQueueGetNegative(t *testing.T) {
 }
 
 func TestQueueGetOutOfRangePanics(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
 	q.Add(1)
 	q.Add(2)
@@ -130,7 +130,7 @@ func TestQueueGetOutOfRangePanics(t *testing.T) {
 }
 
 func TestQueuePeekOutOfRangePanics(t *testing.T) {
-	q := newRingBuf[any](MinRingbufLen)
+	q := newRingBuf[any](32)
 
 	assertPanics(t, "should panic when peeking empty queue", func() {
 		q.Peek()
@@ -145,7 +145,7 @@ func TestQueuePeekOutOfRangePanics(t *testing.T) {
 }
 
 func TestQueueRemoveOutOfRangePanics(t *testing.T) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 
 	assertPanics(t, "should panic when removing empty queue", func() {
 		q.Remove()
@@ -176,7 +176,7 @@ func assertPanics(t *testing.T, name string, f func()) {
 // with the `-benchtime` argument. Passing `-benchtime 1000000x` seems to be about right.
 
 func BenchmarkQueueSerial(b *testing.B) {
-	q := newRingBuf[any](MinRingbufLen)
+	q := newRingBuf[any](32)
 	for i := 0; i < b.N; i++ {
 		q.Add(nil)
 	}
@@ -187,7 +187,7 @@ func BenchmarkQueueSerial(b *testing.B) {
 }
 
 func BenchmarkQueueGet(b *testing.B) {
-	q := newRingBuf[int](MinRingbufLen)
+	q := newRingBuf[int](32)
 	for i := 0; i < b.N; i++ {
 		q.Add(i)
 	}
@@ -198,7 +198,7 @@ func BenchmarkQueueGet(b *testing.B) {
 }
 
 func BenchmarkQueueTickTock(b *testing.B) {
-	q := newRingBuf[any](MinRingbufLen)
+	q := newRingBuf[any](32)
 	for i := 0; i < b.N; i++ {
 		q.Add(nil)
 		q.Peek()

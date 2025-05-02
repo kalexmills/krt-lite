@@ -12,19 +12,85 @@ import (
 	"strings"
 )
 
-// Context is used to track dependencies created by called to Fetch. Passing a Context to a Fetch call creates a
-// dependency between the FlatMap or Map collection and the collection passed to Fetch. Updates to the Fetch collection
-// will cause handlers using Fetch to be recomputed for any relevant objects.
+// Context is used to track dependencies between collections created via [FlatMap] and [Map], and collections accessed
+// via [Fetch]. See [Fetch] for details.
 type Context interface {
-	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer)
+	// registerDependency registers the provided dependency and syncer with the parent collection. Returns the dependency
+	// ID for the registered collection.
+	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer) bool
 	trackKeys(keys []string)
+	resetTrackingForCollection(collID uint64)
 }
 
-// dependency identifies a dependency between two collections created via Fetch.
+// Fetch calls List on the provided Collection, and can be used to subscribe Collections created by [Map] or [FlatMap]
+// to events from other Collections. Passing a non-nil [Context] to Fetch subscribes the collection to updates from
+// Collection c. Updates to any item returned from fetch will trigger recalculation of the handler that called Fetch.
+// When no Context is passed, Fetch is equivalent to c.List().
+//
+// Tracking dependencies among keys makes processing updates faster, but results in additional overhead. For large
+// collections that routinely make Fetch calls that return many item, this may become prohibitive. Users can pass
+// [WithMaxTrackCount] to limit the number of keys tracked. See documentation for [WithMaxTrackCount] for a discussion
+// of trade-offs.
+func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
+	if ktx == nil {
+		return c.List()
+	}
+
+	d := &dependency{
+		dependencyID:   nextDependencyUID(),
+		collectionID:   c.getUID(),
+		collectionName: c.getName(),
+	}
+
+	for _, opt := range opts {
+		opt(d)
+	}
+	// we must register before we List() so as to not miss any events
+	ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
+		ff := func(ts []Event[T]) {
+			// do type erasure to cast from T to any.
+			anys := make([]Event[any], len(ts))
+			for i, t := range ts {
+				anys[i] = castEvent[T, any](t)
+			}
+
+			handler(anys)
+		}
+
+		return c.RegisterBatched(ff, false)
+	})
+
+	ts := c.List()
+	var out []T
+	for _, t := range ts {
+		if d.Matches(t) {
+			out = append(out, t)
+		}
+	}
+
+	if d.maxTrackCount != nil {
+		if uint(len(out)) <= *d.maxTrackCount {
+			var keys []string
+			for i := uint(0); i < min(*d.maxTrackCount, uint(len(out))); i++ {
+				keys = append(keys, GetKey[any](out[i]))
+			}
+			ktx.trackKeys(keys)
+		} else {
+			// reset tracking to ensure updates are not missed due to an incomplete index
+			ktx.resetTrackingForCollection(d.collectionID)
+		}
+	}
+
+	return out
+}
+
+// dependency identifies a Fetch dependency between two collections.
 type dependency struct {
-	depID          uint64
+	dependencyID   uint64
 	collectionID   uint64
 	collectionName string
+
+	maxTrackCount *uint
 
 	filterFunc              func(any) bool
 	filterKeys              map[string]struct{}
@@ -91,7 +157,19 @@ func (d *dependency) Matches(object any) bool {
 	return true
 }
 
-// MatchKeys ensures Fetch only returns objects with matching keys. MatchKeys may be used multiple times in the same
+// WithMaxTrackCount sets the maximum number of keys tracked via Fetch. Any fetch call which returns more keys than the
+// configured will not be tracked. For keys without tracking information, a full scan of the collection is performed
+// for each fetched item when updates occur.
+func WithMaxTrackCount(maxKeys uint) FetchOption {
+	if maxKeys <= 0 {
+		panic("maxKeys must be > 0")
+	}
+	return func(d *dependency) {
+		d.maxTrackCount = ptr.To(maxKeys)
+	}
+}
+
+// MatchKeys ensures [Fetch] only returns objects with matching keys. MatchKeys may be used multiple times in the same
 // Fetch call.
 func MatchKeys(k ...string) FetchOption {
 	return func(d *dependency) {
@@ -104,9 +182,9 @@ func MatchKeys(k ...string) FetchOption {
 	}
 }
 
-// MatchLabels ensures Fetch only returns Kubernetes objects with a matching set of labels.
-// Panics may occur:
-//   - when used in the same Fetch call more than once.
+// MatchLabels ensures [Fetch] only returns Kubernetes objects with a matching set of labels.
+//
+// Panics will occur in case multiple MatchLabels options are passed to the same invocation of [Fetch].
 func MatchLabels(labels map[string]string) FetchOption {
 	return func(d *dependency) {
 		if d.filterLabels != nil {
@@ -116,12 +194,11 @@ func MatchLabels(labels map[string]string) FetchOption {
 	}
 }
 
-// MatchSelectsLabels ensures Fetch only returns objects that would select objects with the provided set of labels.
+// MatchSelectsLabels ensures [Fetch] only returns objects that would select objects with the provided set of labels.
 // Caller must provide an extractor which retrieves [labels.Selector] implementations from objects in the target
-// collection. See
+// collection. See [ExtractPodSelector].
 //
-// Panics may occur:
-//   - when used in the same Fetch call more than once.
+// Panics will occur in case multiple MatchSelectsLabels options are passed to the same invocation of [Fetch].
 func MatchSelectsLabels(labels map[string]string, extractor SelectorExtractor) FetchOption {
 	return func(d *dependency) {
 		if d.filterSelectorExtractor != nil {
@@ -133,11 +210,13 @@ func MatchSelectsLabels(labels map[string]string, extractor SelectorExtractor) F
 }
 
 // MatchLabelSelector ensures Fetch only returns objects that would be selected by the provided label selector.
+//
 // Panics may occur:
 //   - when used in the same Fetch call more than once
-//   - when used with a collection containing types that do not implement Labeler.
+//   - when used with a collection containing types that do not implement [Labeler].
 //
-// Intended for use with k8s objects that have a label selector. See [metav1.LabelSelectorAsSelector] for details.
+// Intended for use with Kubernetes objects that contain a label selector. See [metav1.LabelSelectorAsSelector] for
+// details.
 func MatchLabelSelector(selector labels.Selector) FetchOption {
 	return func(d *dependency) {
 		if d.filterLabelSelector != nil {
@@ -151,7 +230,7 @@ func MatchLabelSelector(selector labels.Selector) FetchOption {
 // formatted as "{namespace}/{name}", or "{name}", for non-namespaced objects. MatchNames may be used multiple times in
 // the same Fetch call.
 //
-// Panics may occur when used in Collections that do not contain kubernetes [metav1.Object].
+// Panics will occur when used in Collections that do not contain [metav1.Object].
 func MatchNames(names ...string) FetchOption {
 	return func(d *dependency) {
 		if d.filterNames == nil {
@@ -168,11 +247,12 @@ func MatchNames(names ...string) FetchOption {
 	}
 }
 
-// MatchFilter ensures Fetch only returns objects which match the provided filter.
+// MatchFilter ensures [Fetch] only returns objects which match the provided filter.
 //
-// Panics may occur:
-//   - when T does not match the type of the collection passed to Fetch.
-//   - when used in the same Fetch call as MatchIndex, or a separate call to MatchFilter.
+// Panics will occur:
+//   - in case T does not match the type of the collection passed to Fetch.
+//   - when multiple MatchFilter calls are passed to the same Fetch invocation.
+//   - when both MatchFilter and [MatchIndex] are passed to the same Fetch invocation.
 func MatchFilter[T any](filter func(T) bool) FetchOption {
 	return func(d *dependency) {
 		if d.filterFunc != nil {
@@ -187,8 +267,9 @@ func MatchFilter[T any](filter func(T) bool) FetchOption {
 // MatchIndex ensures Fetch only returns objects which match the provided index and key.
 //
 // Panics may occur:
-//   - when T does not match the type of the collection passed to Fetch.
-//   - when used in the same Fetch call as MatchIndex, or a separate call to MatchFilter.
+//   - in case T does not match the type of the collection passed to Fetch.
+//   - when multiple MatchIndex calls are passed to the same Fetch invocation.
+//   - when both [MatchFilter] and MatchIndex are passed to the same Fetch invocation.
 func MatchIndex[T any](index Index[T], key string) FetchOption {
 	return func(d *dependency) {
 		if d.filterFunc != nil {
@@ -200,12 +281,14 @@ func MatchIndex[T any](index Index[T], key string) FetchOption {
 	}
 }
 
-// Labeler is implemented by any type which can have labels.
+// Labeler is implemented by any type which can have labels. Notably, any type embedding [metav1.Object] implements
+// Labeler.
 type Labeler interface {
 	GetLabels() map[string]string
 }
 
-// LabelSelectorer is implemented by any type which has a LabelSelector.
+// LabelSelectorer is provided for use with [MatchLabelSelector]. Collections containing LabelSelectorers are valid
+// Fetch targets. See also [ExtractPodSelector].
 type LabelSelectorer interface {
 	GetLabelSelector() map[string]string
 }
@@ -216,12 +299,23 @@ type kontext[I, O any] struct {
 	key          key[I]
 	dependencies []*dependency
 
-	// trackedKeys contains a record of all filtered items fetched this fetch. The length of trackedKeys should always be
-	// T(1).
-	trackedKeys []string
+	// trackedKeys contains a record of all filtered items fetched this fetch. The length of trackedKeys is upper bounded
+	// by MaxFetchKeyTracking
+	trackedKeys map[string]struct{}
+
+	resetTracking map[uint64]struct{}
 }
 
-func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) {
+func newKontext[I, O any](collection *derivedCollection[I, O], iKey key[I]) *kontext[I, O] {
+	return &kontext[I, O]{
+		collection:    collection,
+		key:           iKey,
+		trackedKeys:   make(map[string]struct{}),
+		resetTracking: make(map[uint64]struct{}),
+	}
+}
+
+func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) bool {
 	// register a watch on the parent collection, unless we already have one
 	if _, ok := ktx.collection.collectionDependencies[d.collectionID]; !ok {
 		l := ktx.collection.logger().With("fromCollectionName", d.collectionName, "fromCollectionID", d.collectionID)
@@ -229,7 +323,6 @@ func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 		l.Debug("registering dependency")
 
 		syn.WaitUntilSynced(ktx.collection.stop) // wait until passed collection is synced.
-
 		ktx.collection.collectionDependencies[d.collectionID] = struct{}{}
 
 		register(func(anys []Event[any]) { // register and wait for sync
@@ -239,67 +332,20 @@ func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 
 		l.Debug("dependency registration has synced")
 	}
+
 	ktx.dependencies = append(ktx.dependencies, d)
+	ktx.collection.logger().Info("added dependency", "count", len(ktx.dependencies))
+	return false
 }
 
 func (ktx *kontext[I, O]) trackKeys(keys []string) {
-	ktx.trackedKeys = keys
+	for _, key := range keys {
+		ktx.trackedKeys[key] = struct{}{}
+	}
 }
 
-// MaxTrackKeys constrains memory usage by placing a maximum cap on the number of keys tracked between Fetch
-// dependencies. Can be increased to trade-off memory for faster processing of events triggered via Fetch.
-var MaxTrackKeys = 10
-
-// Fetch calls List on the provided Collection, and can be used to subscribe Collections created by Map or FlatMap to
-// updates from additional collections. Passing a non-nil Context to Fetch subscribes the collection to updates from
-// Collection c. When no Context is passed, Fetch is equivalent to c.List().
-func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
-	if ktx == nil {
-		return c.List()
-	}
-
-	d := &dependency{
-		depID:          nextDependencyUID(),
-		collectionID:   c.getUID(),
-		collectionName: c.getName(),
-	}
-
-	for _, opt := range opts {
-		opt(d)
-	}
-
-	// we must register before we List() so as to not miss any events
-	ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
-		ff := func(ts []Event[T]) {
-			// do type erasure to cast from T to any.
-			anys := make([]Event[any], len(ts))
-			for i, t := range ts {
-				anys[i] = castEvent[T, any](t)
-			}
-
-			handler(anys)
-		}
-
-		return c.RegisterBatched(ff, false)
-	})
-
-	ts := c.List()
-	var out []T
-	for _, t := range ts {
-		if d.Matches(t) {
-			out = append(out, t)
-		}
-	}
-
-	for i := 0; i < min(MaxTrackKeys, len(out)); i++ {
-		var keys []string
-		for _, t := range out {
-			keys = append(keys, GetKey[any](t))
-		}
-		ktx.trackKeys(keys)
-	}
-
-	return out
+func (ktx *kontext[I, O]) resetTrackingForCollection(collID uint64) {
+	ktx.resetTracking[collID] = struct{}{}
 }
 
 func castEvent[I, O any](o Event[I]) Event[O] {
