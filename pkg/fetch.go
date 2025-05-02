@@ -161,9 +161,6 @@ func (d *dependency) Matches(object any) bool {
 // configured will not be tracked. For keys without tracking information, a full scan of the collection is performed
 // for each fetched item when updates occur.
 func WithMaxTrackCount(maxKeys uint) FetchOption {
-	if maxKeys <= 0 {
-		panic("maxKeys must be > 0")
-	}
 	return func(d *dependency) {
 		d.maxTrackCount = ptr.To(maxKeys)
 	}
@@ -318,6 +315,7 @@ func newKontext[I, O any](collection *derivedCollection[I, O], iKey key[I]) *kon
 func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) bool {
 	// register a watch on the parent collection, unless we already have one
 	if _, ok := ktx.collection.collectionDependencies[d.collectionID]; !ok {
+
 		l := ktx.collection.logger().With("fromCollectionName", d.collectionName, "fromCollectionID", d.collectionID)
 
 		l.Debug("registering dependency")
