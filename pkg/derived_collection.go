@@ -11,19 +11,18 @@ import (
 	"sync"
 )
 
-// PreallocBufferSize is used to preallocate buffers for all unbounded queues used in krt-lite. Take care to set this
-// once before creating any collections to avoid data races. Must be a power of 2. Values less than fifo.MinRingbufLen
-// have no effect.
-var PreallocBufferSize = 1024
+// BufferSize is used to preallocate buffers for all unbounded queues used in krt-lite. Take care to set this
+// once before creating any collections to avoid data races. Must be a power of 2.
+var BufferSize = 1024
 
-// Map creates a new Collection by calling the provided Mapper on each item in C. The returned Collection will be kept
+// Map creates a new Collection by calling the provided [Mapper] on each item in c. The returned Collection will be kept
 // in sync with c -- every event from c triggers the handler to update the corresponding item in the returned
 // Collection.
 //
 // By default, if running the Mapper results in an identical object, no update event will be sent to downstream
-// collections.  WithSpuriousUpdates can be passed to disable this behavior.
+// collections. Passing [WithSpuriousUpdates] disables this behavior.
 //
-// Panics will occur if an unsupported type for I or T is used, see GetKey for details.
+// Panics will occur if an unsupported type for I or O is used, see [GetKey] for details.
 func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	ff := func(ctx Context, i I) []O {
 		res := handler(ctx, i)
@@ -35,15 +34,14 @@ func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOpti
 	return FlatMap(c, ff, opts...)
 }
 
-// FlatMap creates a new Collection by calling the provided FlatMapper on each item in C. Unlike Map, each item in
+// FlatMap creates a new Collection by calling the provided [FlatMapper] on each item in C. Unlike Map, each item in
 // Collection c may result in zero or more items in the returned Collection. The returned Collection is kept in sync
 // with c. See Map for details.
 //
-// By default, if running the FlatMapper results in identical objects for the same key, no update event will be sent to
-// downstream collections.
-// WithSpuriousUpdates can be passed to disable this behavior.
+// By default, update events are not retriggered when FlatMapper produces identical objects for the same key.
+// Passing [WithSpuriousUpdates] disables this behavior.
 //
-// Panics will occur if an unsupported type of I or T are used, see GetKey for details.
+// Panics will occur if an unsupported type of I or O are used, see [GetKey] for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
 	res := newDerivedCollection(c, f, opts)
 	return res
@@ -75,14 +73,9 @@ type derivedCollection[I, O any] struct {
 	collectionDependencies map[uint64]struct{}      // keyed list of collections w/ dependencies added via fetch
 	dependencies           map[key[I]][]*dependency // dependencies by input key
 
-	depMap *bimap.BiMap[key[I], depKey] // depMap maps between input keys and keys of dependencies.
+	depMaps map[uint64]*bimap.BiMap[key[I], string] // depMaps stores dependency maps for each dependency.
 
 	taskQueue *fifo.Queue[task]
-}
-
-type depKey struct {
-	depID uint64
-	key   string
 }
 
 func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectionOption) *derivedCollection[I, O] {
@@ -100,11 +93,11 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		regHandlerMut:      &sync.RWMutex{},
 		registeredHandlers: make(map[*registrationHandler[O]]struct{}),
 
-		taskQueue: fifo.NewQueue[task](PreallocBufferSize),
+		taskQueue: fifo.NewQueue[task](BufferSize),
 
 		collectionDependencies: make(map[uint64]struct{}),
 		dependencies:           make(map[key[I]][]*dependency),
-		depMap:                 bimap.New[key[I], depKey](),
+		depMaps:                make(map[uint64]*bimap.BiMap[key[I], string]),
 
 		syncedCh: make(chan struct{}),
 	}
@@ -259,7 +252,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 		i := input.Latest()
 		iKey := getTypedKey(i)
 
-		pendingContexts[iKey] = &kontext[I, O]{collection: c, key: iKey}
+		pendingContexts[iKey] = newKontext[I, O](c, iKey)
 		os := c.transformer(pendingContexts[iKey], input.Latest())
 		outmap := make(map[key[O]]O, len(os))
 		for _, o := range os {
@@ -393,48 +386,71 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 }
 
 func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[any]) map[key[I]]struct{} {
-	// search through the depMap mapping for an index... if none, check everything.
+
 	result := make(map[key[I]]struct{})
+	depMap := c.depMaps[dep.dependencyID]
 	for _, ev := range events {
+		// search through the depMap for a match to avoid searching the entire collection.
 		found := false
 		for _, item := range ev.Items() {
-			key := GetKey[any](item)
-			for iKey := range c.depMap.GetUs(depKey{depID: dep.depID, key: key}) {
+			for iKey := range depMap.GetUs(GetKey[any](item)) {
 				found = true
-				c.logger().Debug("found a match")
 				result[iKey] = struct{}{}
 			}
 		}
-		if !found {
-			for iKey, depsForKey := range c.dependencies {
-				for _, depForKey := range depsForKey {
-					for _, item := range ev.Items() {
-						if depForKey.Matches(item) {
-							result[iKey] = struct{}{}
-						}
+		if found {
+			continue
+		}
+
+		// if no match is found, check all dependencies across all keys for a match.
+		for iKey, depsForKey := range c.dependencies {
+			for _, depForKey := range depsForKey {
+				for _, item := range ev.Items() {
+					if depForKey.Matches(item) {
+						result[iKey] = struct{}{}
 					}
 				}
 			}
 		}
 	}
+
 	return result
 }
 
-// dependencyUpdate updates dependency state. Caller must hold mut.
+// dependencyUpdate updates dependency tracking. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, O]) {
 	c.dependencies[iKey] = ktx.dependencies
 	for _, dep := range ktx.dependencies {
-		// update tracking by sourceKey
-		for _, k := range ktx.trackedKeys {
-			c.depMap.Add(iKey, depKey{depID: dep.depID, key: k})
+
+		if _, ok := c.depMaps[dep.dependencyID]; !ok {
+			c.depMaps[dep.dependencyID] = bimap.New[key[I], string]()
+		}
+		depMap := c.depMaps[dep.dependencyID]
+
+		// if this key exceeded its max track count, reset tracking information for this key so all dependencies are
+		// checked during updates.
+		if _, ok := ktx.resetTracking[dep.dependencyID]; ok {
+			depMap.RemoveU(iKey)
+			continue
+		}
+
+		for k := range ktx.trackedKeys {
+			depMap.Add(iKey, k)
 		}
 	}
 }
 
-// dependencyDelete deletes a dependency. Caller must hold mut.
+// dependencyDelete deletes all dependency tracking for the provided iKey. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyDelete(iKey key[I]) {
+	for _, dep := range c.dependencies[iKey] {
+		depID := dep.dependencyID
+
+		c.depMaps[depID].RemoveU(iKey)
+		if c.depMaps[depID].IsEmpty() {
+			delete(c.depMaps, depID)
+		}
+	}
 	delete(c.dependencies, iKey)
-	c.depMap.RemoveU(iKey)
 }
 
 func (c *derivedCollection[I, O]) snapshotInitialState() []Event[O] {
@@ -472,7 +488,7 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 	h := &registrationHandler[O]{
 		parent:          parent,
 		handler:         handler,
-		queue:           fifo.NewQueue[regQueueItem[O]](PreallocBufferSize),
+		queue:           fifo.NewQueue[regQueueItem[O]](BufferSize),
 		stopCh:          make(chan struct{}),
 		syncedCh:        make(chan struct{}),
 		closeSyncedOnce: &sync.Once{},
@@ -485,7 +501,7 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 	return h
 }
 
-// registrationHandler handles a fifo.Queue of batched output events which are being sent to a registered component.
+// registrationHandler handles a [fifo.Queue] of batched output events which are being sent to a registered component.
 type registrationHandler[T any] struct {
 	parent Collection[T]
 

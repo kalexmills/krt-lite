@@ -212,7 +212,6 @@ func BenchmarkController(b *testing.B) {
 			}
 			drainN(events, 1000)
 		}
-		b.Log("events left in channel:", len(events))
 	}
 
 	b.Run("krt", func(b *testing.B) {
