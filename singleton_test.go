@@ -43,5 +43,4 @@ func TestStaticSingleton(t *testing.T) {
 	assert.Equal(t, ptr.To("bar3"), s.Get())
 
 	tt.Empty()
-
 }

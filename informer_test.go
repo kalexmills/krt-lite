@@ -33,15 +33,15 @@ func (r typedClientRig) Collection(ctx context.Context) krtlite.Collection[*core
 }
 
 func (r typedClientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.Create(ctx, t, metav1.CreateOptions{})
+	return r.c.Create(ctx, t, metav1.CreateOptions{}) //nolint: wrapcheck
 }
 
 func (r typedClientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.Update(ctx, t, metav1.UpdateOptions{})
+	return r.c.Update(ctx, t, metav1.UpdateOptions{}) //nolint: wrapcheck
 }
 
 func (r typedClientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
-	return r.c.Delete(ctx, t.Name, metav1.DeleteOptions{})
+	return r.c.Delete(ctx, t.Name, metav1.DeleteOptions{}) //nolint: wrapcheck
 }
 
 type clientRig struct {
@@ -54,22 +54,21 @@ func (r clientRig) Collection(ctx context.Context) krtlite.Collection[*corev1.Co
 
 func (r clientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	err := r.c.Create(ctx, t)
-	return t, err
+	return t, err //nolint: wrapcheck
 }
 
 func (r clientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	err := r.c.Update(ctx, t)
-	return t, err
+	return t, err //nolint: wrapcheck
 }
 
 func (r clientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
 	err := r.c.Delete(ctx, t)
-	return err
+	return err //nolint: wrapcheck
 }
 
 func TestInformer(t *testing.T) {
 	doTest := func(t *testing.T, r rig) {
-
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 
