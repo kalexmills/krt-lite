@@ -22,18 +22,15 @@ type Context interface {
 	resetTrackingForCollection(collID uint64)
 }
 
-// maxFetchKeyTracking sets the default upper bound for dependency tracking.
-const maxFetchKeyTracking int = 100
-
 // Fetch calls List on the provided Collection, and can be used to subscribe Collections created by [Map] or [FlatMap]
 // to events from other Collections. Passing a non-nil [Context] to Fetch subscribes the collection to updates from
 // Collection c. Updates to any item returned from fetch will trigger recalculation of the handler that called Fetch.
 // When no Context is passed, Fetch is equivalent to c.List().
 //
-// Tracking dependencies among keys makes processing updates faster, but can result in using quadratic space for large
-// collections that routinely make Fetch calls that return many items. To keep this from becoming prohibitively
-// expensive, krt-lite only tracks keys for Fetch calls with less than 100 keys by default. This maximum can be
-// configured by passing [WithMaxTrackCount].
+// Tracking dependencies among keys makes processing updates faster, but results in additional overhead. For large
+// collections that routinely make Fetch calls that return many item, this may become prohibitive. Users can pass
+// [WithMaxTrackCount] to limit the number of keys tracked. See documentation for [WithMaxTrackCount] for a discussion
+// of trade-offs.
 func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 	if ktx == nil {
 		return c.List()
@@ -43,17 +40,11 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 		dependencyID:   nextDependencyUID(),
 		collectionID:   c.getUID(),
 		collectionName: c.getName(),
-		maxTrackCount:  -1, // sentinel value
 	}
 
 	for _, opt := range opts {
 		opt(d)
 	}
-
-	if d.maxTrackCount < 0 {
-		d.maxTrackCount = maxFetchKeyTracking
-	}
-
 	// we must register before we List() so as to not miss any events
 	ktx.registerDependency(d, c, func(handler func([]Event[any])) Syncer {
 		ff := func(ts []Event[T]) {
@@ -77,27 +68,29 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 		}
 	}
 
-	if len(out) <= d.maxTrackCount {
-		var keys []string
-		for i := 0; i < min(d.maxTrackCount, len(out)); i++ {
-			keys = append(keys, GetKey[any](out[i]))
+	if d.maxTrackCount != nil {
+		if uint(len(out)) <= *d.maxTrackCount {
+			var keys []string
+			for i := uint(0); i < min(*d.maxTrackCount, uint(len(out))); i++ {
+				keys = append(keys, GetKey[any](out[i]))
+			}
+			ktx.trackKeys(keys)
+		} else {
+			// reset tracking to ensure updates are not missed due to an incomplete index
+			ktx.resetTrackingForCollection(d.collectionID)
 		}
-		ktx.trackKeys(keys)
-	} else {
-		// reset tracking to ensure updates are not missed due to an incomplete index
-		ktx.resetTrackingForCollection(d.collectionID)
 	}
 
 	return out
 }
 
-// dependency identifies a dependency between two collections created via Fetch.
+// dependency identifies a Fetch dependency between two collections.
 type dependency struct {
 	dependencyID   uint64
 	collectionID   uint64
 	collectionName string
 
-	maxTrackCount int
+	maxTrackCount *uint
 
 	filterFunc              func(any) bool
 	filterKeys              map[string]struct{}
@@ -164,13 +157,15 @@ func (d *dependency) Matches(object any) bool {
 	return true
 }
 
-// WithMaxTrackCount sets the maximum number of keys tracked via Fetch. See [Fetch] for details.
+// WithMaxTrackCount sets the maximum number of keys tracked via Fetch. Any fetch call which returns more keys than the
+// configured will not be tracked. For keys without tracking information, a full scan of the collection is performed
+// for each fetched item when updates occur.
 func WithMaxTrackCount(maxKeys uint) FetchOption {
 	if maxKeys <= 0 {
 		panic("maxKeys must be > 0")
 	}
 	return func(d *dependency) {
-		d.maxTrackCount = int(maxKeys)
+		d.maxTrackCount = ptr.To(maxKeys)
 	}
 }
 
@@ -293,7 +288,7 @@ type Labeler interface {
 }
 
 // LabelSelectorer is provided for use with [MatchLabelSelector]. Collections containing LabelSelectorers are valid
-// Fetch targets. See also [ExtractPodSelector]
+// Fetch targets. See also [ExtractPodSelector].
 type LabelSelectorer interface {
 	GetLabelSelector() map[string]string
 }
@@ -323,7 +318,6 @@ func newKontext[I, O any](collection *derivedCollection[I, O], iKey key[I]) *kon
 func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) bool {
 	// register a watch on the parent collection, unless we already have one
 	if _, ok := ktx.collection.collectionDependencies[d.collectionID]; !ok {
-
 		l := ktx.collection.logger().With("fromCollectionName", d.collectionName, "fromCollectionID", d.collectionID)
 
 		l.Debug("registering dependency")

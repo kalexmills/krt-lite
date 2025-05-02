@@ -386,7 +386,6 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 }
 
 func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[any]) map[key[I]]struct{} {
-
 	result := make(map[key[I]]struct{})
 	depMap := c.depMaps[dep.dependencyID]
 	for _, ev := range events {
@@ -421,7 +420,6 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, O]) {
 	c.dependencies[iKey] = ktx.dependencies
 	for _, dep := range ktx.dependencies {
-
 		if _, ok := c.depMaps[dep.dependencyID]; !ok {
 			c.depMaps[dep.dependencyID] = bimap.New[key[I], string]()
 		}
