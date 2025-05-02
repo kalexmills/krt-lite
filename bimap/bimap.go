@@ -62,12 +62,12 @@ func (b *BiMap[L, R]) RemoveRight(r R) {
 	delete(b.rightToLeft, r)
 }
 
-// GetVs returns an iterator over all items in the Right set which are mapped to by its argument.
-func (b *BiMap[L, R]) GetVs(l L) iter.Seq[R] {
+// GetRight returns an iterator over all items in the Right set which are mapped to by its argument.
+func (b *BiMap[L, R]) GetRight(l L) iter.Seq[R] {
 	return maps.Keys(b.leftToRight[l])
 }
 
-// GetUs returns an iterator over all items in the Left set which are mapped to by its argument.
-func (b *BiMap[L, R]) GetUs(r R) iter.Seq[L] {
+// GetLeft returns an iterator over all items in the Left set which are mapped to by its argument.
+func (b *BiMap[L, R]) GetLeft(r R) iter.Seq[L] {
 	return maps.Keys(b.rightToLeft[r])
 }

@@ -391,7 +391,7 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 		// search through the depMap for a match to avoid searching the entire collection.
 		found := false
 		for _, item := range ev.Items() {
-			for iKey := range depMap.GetUs(GetKey[any](item)) {
+			for iKey := range depMap.GetLeft(GetKey[any](item)) {
 				found = true
 				result[iKey] = struct{}{}
 			}
