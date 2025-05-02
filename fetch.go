@@ -1,4 +1,4 @@
-package krt_lite
+package krtlite
 
 import (
 	"fmt"

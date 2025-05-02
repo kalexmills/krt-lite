@@ -1,4 +1,4 @@
-package krt_lite
+package krtlite
 
 // MergeDisjoint merges several collections into one. Merge collections with overlapping keysets is not supported by
 // this collection, and results in undefined behavior.

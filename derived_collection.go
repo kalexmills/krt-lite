@@ -1,4 +1,4 @@
-package krt_lite
+package krtlite
 
 import (
 	"github.com/kalexmills/krt-lite/bimap"

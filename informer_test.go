@@ -1,4 +1,4 @@
-package krt_lite_test
+package krtlite_test
 
 import (
 	"context"

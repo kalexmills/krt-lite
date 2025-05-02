@@ -1,4 +1,4 @@
-package krt_lite
+package krtlite
 
 import (
 	_ "k8s.io/apimachinery/pkg/runtime"
