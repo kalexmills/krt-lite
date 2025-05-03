@@ -17,13 +17,6 @@ type SimpleService struct {
 	Selector map[string]string
 }
 
-func NewSimpleService(name, namespace string, selector map[string]string) SimpleService {
-	return SimpleService{
-		Named:    Named{Name: name, Namespace: namespace},
-		Selector: selector,
-	}
-}
-
 func SimpleServiceCollection(services krtlite.Collection[*corev1.Service]) krtlite.Collection[SimpleService] {
 	return krtlite.Map(services, func(ctx krtlite.Context, i *corev1.Service) *SimpleService {
 		return &SimpleService{

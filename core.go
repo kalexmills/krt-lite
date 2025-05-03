@@ -2,6 +2,7 @@ package krtlite
 
 import (
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"log/slog"
@@ -144,6 +145,31 @@ func WithSpuriousUpdates() CollectionOption {
 	}
 }
 
+// WithFilter configures informers to perform server-side filtering. Has no effect for other collections.
+func WithFilter(filter InformerFilter) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &filter
+	}
+}
+
+// InformerFilter provides server-side filters that apply to Informers.
+type InformerFilter struct {
+	LabelSelector string
+	FieldSelector string
+	Namespace     string
+}
+
+func (f InformerFilter) ListOptions() *metav1.ListOptions {
+	opts := metav1.ListOptions{
+		LabelSelector: f.LabelSelector,
+		FieldSelector: f.FieldSelector,
+	}
+	if f.Namespace != "" {
+		opts.FieldSelector += ",metadata.namespace=" + f.Namespace
+	}
+	return &opts
+}
+
 // collectionShared contains metadata and fields common to controllers.
 type collectionShared struct {
 	uid                 uint64
@@ -151,6 +177,7 @@ type collectionShared struct {
 	stop                <-chan struct{}
 	pollInterval        *time.Duration
 	wantSpuriousUpdates bool
+	filter              *InformerFilter
 }
 
 //nolint:unused // implementing interface
