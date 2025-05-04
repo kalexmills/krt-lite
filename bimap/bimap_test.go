@@ -16,6 +16,7 @@ func TestBimap(t *testing.T) {
 	for j := 0; j < 10; j++ {
 		for i := 0; i < 10; i++ {
 			bimap.Add(i, j)
+			assert.Equal(t, 10*j+(i+1), bimap.Size())
 		}
 
 		var oneToJ []int
@@ -28,9 +29,12 @@ func TestBimap(t *testing.T) {
 		}
 	}
 
+	assert.Equal(t, 100, bimap.Size())
+
 	// remove from left set
 	for j := 0; j < 10; j++ {
 		bimap.RemoveLeft(j)
+		assert.Equal(t, 100-10*(j+1), bimap.Size())
 
 		for i := j + 1; i < 10; i++ {
 			assert.Equal(t, zeroToNine, slices.Sorted(bimap.GetRight(i)))
@@ -44,6 +48,7 @@ func TestBimap(t *testing.T) {
 		}
 	}
 	assert.True(t, bimap.IsEmpty())
+	assert.Equal(t, 0, bimap.Size())
 
 	// recreate and remove from right set
 	for j := 0; j < 10; j++ {
@@ -52,9 +57,12 @@ func TestBimap(t *testing.T) {
 		}
 	}
 
+	assert.Equal(t, 100, bimap.Size())
+
 	// remove from right set
 	for j := 0; j < 10; j++ {
 		bimap.RemoveRight(j)
+		assert.Equal(t, 100-10*(j+1), bimap.Size())
 
 		for i := j + 1; i < 10; i++ {
 			assert.Equal(t, zeroToNine, slices.Sorted(bimap.GetLeft(i)))
@@ -68,4 +76,5 @@ func TestBimap(t *testing.T) {
 		}
 	}
 	assert.True(t, bimap.IsEmpty())
+	assert.Equal(t, 0, bimap.Size())
 }

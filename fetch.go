@@ -37,7 +37,6 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 	}
 
 	d := &dependency{
-		dependencyID:   nextDependencyUID(),
 		collectionID:   c.getUID(),
 		collectionName: c.getName(),
 	}
@@ -86,7 +85,6 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 
 // dependency identifies a Fetch dependency between two collections.
 type dependency struct {
-	dependencyID   uint64
 	collectionID   uint64
 	collectionName string
 
