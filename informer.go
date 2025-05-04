@@ -103,7 +103,7 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 // NewListerWatcherInformer creates a new Collection from items returned by the provided [cache.ListerWatcher], which
 // must return objects of type T.
 //
-// Objects in this Collection will have keys in the format [{namespace}/{name}, or {name} for cluster-scoped objects.
+// Key for objects in this Collection are in the format {namespace}/{name}, or {name} for cluster-scoped objects.
 //
 // Passing WithFilter to this function has no effect. Filtering must be performed by the passed [cache.ListerWatcher].
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
@@ -135,6 +135,27 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	go i.inf.Run(i.stop)
 
 	return &i
+}
+
+// InformerFilter provides server-side filters that apply to Informers.
+type InformerFilter struct {
+	LabelSelector string
+	FieldSelector string
+	Namespace     string
+}
+
+func (f InformerFilter) ListOptions() *metav1.ListOptions {
+	opts := metav1.ListOptions{
+		LabelSelector: f.LabelSelector,
+		FieldSelector: f.FieldSelector,
+	}
+	if f.Namespace != "" {
+		if opts.FieldSelector != "" {
+			opts.FieldSelector += ","
+		}
+		opts.FieldSelector += "metadata.namespace=" + f.Namespace
+	}
+	return &opts
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[T].

@@ -2,7 +2,6 @@ package krtlite
 
 import (
 	"fmt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"log/slog"
@@ -152,22 +151,28 @@ func WithFilter(filter InformerFilter) CollectionOption {
 	}
 }
 
-// InformerFilter provides server-side filters that apply to Informers.
-type InformerFilter struct {
-	LabelSelector string
-	FieldSelector string
-	Namespace     string
+func WithFilterByLabel(labelSelector string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			LabelSelector: labelSelector,
+		}
+	}
 }
 
-func (f InformerFilter) ListOptions() *metav1.ListOptions {
-	opts := metav1.ListOptions{
-		LabelSelector: f.LabelSelector,
-		FieldSelector: f.FieldSelector,
+func WithFilterByField(fieldSelector string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			FieldSelector: fieldSelector,
+		}
 	}
-	if f.Namespace != "" {
-		opts.FieldSelector += ",metadata.namespace=" + f.Namespace
+}
+
+func WithFilterByNamespace(namespace string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			Namespace: namespace,
+		}
 	}
-	return &opts
 }
 
 // collectionShared contains metadata and fields common to controllers.
