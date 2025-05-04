@@ -175,7 +175,7 @@ func TestInformerFilters(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		ConfigMaps := r.Collection(ctx, krtlite.WithFilterByNamespace("ns1"))
+		ConfigMaps := r.Collection(ctx, krtlite.WithFilterByNamespace("ns1"), krtlite.WithContext(ctx))
 		tt := NewTracker[*corev1.ConfigMap](t)
 		reg := ConfigMaps.Register(tt.Track)
 
@@ -184,7 +184,7 @@ func TestInformerFilters(t *testing.T) {
 
 		reg.Unregister()
 
-		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByField("metadata.name=c"))
+		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByField("metadata.name=c"), krtlite.WithContext(ctx))
 		tt = NewTracker[*corev1.ConfigMap](t)
 		reg = ConfigMaps.Register(tt.Track)
 
@@ -193,7 +193,7 @@ func TestInformerFilters(t *testing.T) {
 
 		reg.Unregister()
 
-		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByLabel("foo=baz"))
+		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByLabel("foo=baz"), krtlite.WithContext(ctx))
 		tt = NewTracker[*corev1.ConfigMap](t)
 		_ = ConfigMaps.Register(tt.Track)
 
