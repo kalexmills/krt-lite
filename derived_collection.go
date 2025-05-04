@@ -248,12 +248,12 @@ func (c *derivedCollection[I, O]) processTaskQueue() {
 		case <-c.stop:
 			c.logger().Info("stopping task queue")
 			return
-		case t := <-c.taskQueue.Out():
-			if t != nil {
-				t()
-			} else {
-				c.logger().Warn("task queue received a nil task")
+		case t, ok := <-c.taskQueue.Out():
+			if !ok {
+				c.logger().Info("task queue closed")
+				return
 			}
+			t()
 		}
 	}
 }
@@ -601,6 +601,7 @@ func (p *registrationHandler[T]) run() {
 		select {
 		case fromQueue, ok := <-p.queue.Out():
 			if !ok {
+				p.parent.logger().Debug("stopping registration handler; queue closed")
 				return
 			}
 			if fromQueue.initialEventsSent {
