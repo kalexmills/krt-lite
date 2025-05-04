@@ -195,7 +195,7 @@ func TestInformerFilters(t *testing.T) {
 
 		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByLabel("foo=baz"))
 		tt = NewTracker[*corev1.ConfigMap](t)
-		reg = ConfigMaps.Register(tt.Track)
+		_ = ConfigMaps.Register(tt.Track)
 
 		tt.Wait("add/ns1/a", "add/ns2/c")
 		tt.Empty()
