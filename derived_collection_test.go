@@ -24,13 +24,13 @@ func NewSimpleService(name, namespace string, selector map[string]string) Simple
 	}
 }
 
-func SimpleServiceCollection(services krtlite.Collection[*corev1.Service]) krtlite.Collection[SimpleService] {
+func SimpleServiceCollection(ctx context.Context, services krtlite.Collection[*corev1.Service]) krtlite.Collection[SimpleService] {
 	return krtlite.Map(services, func(ctx krtlite.Context, i *corev1.Service) *SimpleService {
 		return &SimpleService{
 			Named:    NewNamed(i),
 			Selector: i.Spec.Selector,
 		}
-	}, krtlite.WithName("SimpleService"))
+	}, krtlite.WithName("SimpleService"), krtlite.WithContext(ctx))
 }
 
 func TestDerivedCollectionSimple(t *testing.T) {
@@ -41,9 +41,10 @@ func TestDerivedCollectionSimple(t *testing.T) {
 	nsClient := client.CoreV1().Namespaces()
 
 	// create collections
-	Namespaces := krtlite.NewTypedClientInformer[*corev1.Namespace, *corev1.NamespaceList](ctx, nsClient)
+	Namespaces := krtlite.NewTypedClientInformer[*corev1.Namespace, *corev1.NamespaceList](ctx, nsClient,
+		krtlite.WithContext(ctx))
 	Namespaces.WaitUntilSynced(ctx.Done())
-	SimpleNamespaces := SimpleNamespaceCollection(Namespaces)
+	SimpleNamespaces := SimpleNamespaceCollection(ctx, Namespaces)
 
 	assert.Empty(t, ListSorted(SimpleNamespaces), "expected collection to start empty")
 
@@ -112,13 +113,15 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 			Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
 		},
 	)
-	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"), krtlite.WithName("Pods"))
-	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"), krtlite.WithName("Services"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, c.CoreV1().Services("namespace"),
+		krtlite.WithName("Services"), krtlite.WithContext(ctx))
 
 	// assert that collections are equal immediately after waiting for sync.
-	SimplePods := SimplePodCollection(pods)
-	SimpleServices := SimpleServiceCollection(services)
-	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+	SimplePods := SimplePodCollection(ctx, pods)
+	SimpleServices := SimpleServiceCollection(ctx, services)
+	SimpleEndpoints := SimpleEndpointsCollection(ctx, SimplePods, SimpleServices)
 	assert.True(t, SimpleEndpoints.WaitUntilSynced(ctx.Done()))
 
 	assert.Equal(t, []SimpleEndpoint{{Pod: "pod", Service: "svc", Namespace: "namespace", IP: "1.2.3.4"}},
@@ -131,13 +134,15 @@ func TestCollectionMerged(t *testing.T) {
 
 	c := fake.NewClientset()
 	podClient := c.CoreV1().Pods("namespace")
-	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, podClient, krtlite.WithName("Pods"))
+	pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, podClient,
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
 	svcClient := c.CoreV1().Services("namespace")
-	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, svcClient, krtlite.WithName("Services"))
+	services := krtlite.NewTypedClientInformer[*corev1.Service](ctx, svcClient,
+		krtlite.WithName("Services"), krtlite.WithContext(ctx))
 
-	SimplePods := SimplePodCollection(pods)
-	SimpleServices := SimpleServiceCollection(services)
-	SimpleEndpoints := SimpleEndpointsCollection(SimplePods, SimpleServices)
+	SimplePods := SimplePodCollection(ctx, pods)
+	SimpleServices := SimpleServiceCollection(ctx, services)
+	SimpleEndpoints := SimpleEndpointsCollection(ctx, SimplePods, SimpleServices)
 	SimpleEndpoints.WaitUntilSynced(ctx.Done())
 
 	assert.Empty(t, ListSorted(SimpleEndpoints))
@@ -226,10 +231,11 @@ func TestCollectionDiamond(t *testing.T) {
 	c := fake.NewClientset()
 	podClient := c.CoreV1().Pods("namespace")
 
-	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
 
-	SimplePods := SimplePodCollection(Pods)
-	SizedPods := SizedPodCollection(Pods)
+	SimplePods := SimplePodCollection(ctx, Pods)
+	SizedPods := SizedPodCollection(ctx, Pods)
 
 	PodSizeCounts := krtlite.Map[SimplePod, PodSizeCount](SimplePods, func(ctx krtlite.Context, pd SimplePod) *PodSizeCount {
 		if _, f := pd.Labels["want-size"]; !f {
@@ -244,7 +250,7 @@ func TestCollectionDiamond(t *testing.T) {
 			Named:         pd.Named,
 			MatchingSizes: len(matches),
 		}
-	}, krtlite.WithName("PodSizeCounts"))
+	}, krtlite.WithName("PodSizeCounts"), krtlite.WithContext(ctx))
 
 	PodSizeCounts.WaitUntilSynced(ctx.Done())
 
@@ -413,8 +419,10 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	podClient := c.CoreV1().Pods("namespace")
 	cmClient := c.CoreV1().ConfigMaps("namespace")
 
-	Pods := krtlite.NewTypedClientInformer[*corev1.Pod, *corev1.PodList](ctx, podClient, krtlite.WithName("Pods"))
-	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap, *corev1.ConfigMapList](ctx, cmClient, krtlite.WithName("ConfigMaps"))
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod, *corev1.PodList](ctx, podClient,
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap, *corev1.ConfigMapList](ctx, cmClient,
+		krtlite.WithName("ConfigMaps"), krtlite.WithContext(ctx))
 
 	lblFoo := map[string]string{"app": "foo"}
 	lblBar := map[string]string{"app": "bar"}
@@ -437,7 +445,7 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 			Named:   NewNamed(i),
 			Configs: names,
 		}
-	}, krtlite.WithName("Results"))
+	}, krtlite.WithName("Results"), krtlite.WithContext(ctx))
 
 	Results.WaitUntilSynced(ctx.Done())
 

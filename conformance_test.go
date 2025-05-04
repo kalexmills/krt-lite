@@ -72,7 +72,7 @@ func TestConformance(t *testing.T) {
 		ctx := t.Context()
 
 		c := fake.NewFakeClient()
-		col := krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, c, krtlite.WithStop(ctx.Done()))
+		col := krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, c, krtlite.WithContext(ctx))
 		rig := &informerRig{
 			Collection: col,
 			client:     c,
@@ -82,17 +82,17 @@ func TestConformance(t *testing.T) {
 	t.Run("staticCollection", func(t *testing.T) {
 		ctx := t.Context()
 
-		col := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
+		col := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithContext(ctx))
 		rig := &staticRig{StaticCollection: col}
 		runConformance[Named](t, rig)
 	})
 
 	t.Run("mergeDisjoint", func(t *testing.T) {
 		ctx := t.Context()
-		col1 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
-		col2 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithStop(ctx.Done()))
+		col1 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithContext(ctx))
+		col2 := krtlite.NewStaticCollection[Named](nil, nil, krtlite.WithContext(ctx))
 		j := krtlite.MergeDisjoint[Named]([]krtlite.Collection[Named]{col1, col2},
-			krtlite.WithStop(ctx.Done()), krtlite.WithName("MergeDisjoint"))
+			krtlite.WithContext(ctx), krtlite.WithName("MergeDisjoint"))
 		rig := &mergeRig{
 			Collection: j,
 			inner:      [2]krtlite.StaticCollection[Named]{col1, col2},
@@ -102,8 +102,8 @@ func TestConformance(t *testing.T) {
 
 	t.Run("derivedCollection", func(t *testing.T) {
 		ctx := t.Context()
-		namespaces := krtlite.NewStaticCollection[string](nil, nil, krtlite.WithStop(ctx.Done()), krtlite.WithName("namespaces"))
-		names := krtlite.NewStaticCollection[string](nil, nil, krtlite.WithStop(ctx.Done()), krtlite.WithName("names"))
+		namespaces := krtlite.NewStaticCollection[string](nil, nil, krtlite.WithContext(ctx), krtlite.WithName("namespaces"))
+		names := krtlite.NewStaticCollection[string](nil, nil, krtlite.WithContext(ctx), krtlite.WithName("names"))
 		col := krtlite.FlatMap(namespaces, func(ctx krtlite.Context, ns string) []Named {
 			names := krtlite.Fetch[string](ctx, names)
 			var result []Named
@@ -111,7 +111,7 @@ func TestConformance(t *testing.T) {
 				result = append(result, Named{Namespace: ns, Name: n})
 			}
 			return result
-		}, krtlite.WithStop(ctx.Done()), krtlite.WithName("DerivedCollection"))
+		}, krtlite.WithContext(ctx), krtlite.WithName("DerivedCollection"))
 		rig := &derivedRig{
 			Collection: col,
 			namespaces: namespaces,

@@ -21,7 +21,6 @@ type mergedCollection[T any] struct {
 	collections []Collection[T]
 	syncer      *multiSyncer
 	synced      chan struct{}
-	stop        chan struct{}
 }
 
 var _ Collection[any] = &mergedCollection[any]{}
@@ -30,7 +29,6 @@ func newMergedCollection[O any](cs []Collection[O], opts []CollectionOption) *me
 	j := &mergedCollection[O]{
 		collectionShared: newCollectionShared(opts),
 		collections:      cs,
-		stop:             make(chan struct{}),
 		synced:           make(chan struct{}),
 	}
 	j.syncer = newMultiSyncer(channelSyncer{synced: j.synced})

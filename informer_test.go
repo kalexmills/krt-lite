@@ -29,7 +29,7 @@ type typedClientRig struct {
 }
 
 func (r typedClientRig) Collection(ctx context.Context) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c)
+	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c, krtlite.WithContext(ctx))
 }
 
 func (r typedClientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
@@ -49,7 +49,7 @@ type clientRig struct {
 }
 
 func (r clientRig) Collection(ctx context.Context) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c)
+	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c, krtlite.WithContext(ctx))
 }
 
 func (r clientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
@@ -152,7 +152,8 @@ func TestTypedClientInformerSync(t *testing.T) {
 		},
 	})
 
-	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll),
+		krtlite.WithContext(ctx))
 
 	var (
 		gotEvent  atomic.Bool

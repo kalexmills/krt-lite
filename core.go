@@ -1,6 +1,7 @@
 package krtlite
 
 import (
+	"context"
 	"fmt"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -76,8 +77,7 @@ type ComparableObject interface {
 
 type Registration interface {
 	Syncer
-	// Unregister unregisters this registration handler and cleans up any resources. Calling Unregister more than once
-	// will panic.
+	// Unregister unregisters this registration handler and cleans up any resources.
 	Unregister()
 }
 
@@ -97,6 +97,8 @@ type Collection[T any] interface {
 	getUID() uint64
 
 	logger() *slog.Logger
+
+	getStopCh() <-chan struct{}
 }
 
 // Singleton is a Collection containing a single value which can change over time.
@@ -121,12 +123,16 @@ func WithName(name string) CollectionOption {
 	}
 }
 
-// WithStop provides a stop channel. When the provided channel is closed, the collection will shut down and stop sending
-// updates to dependent collections.
+// WithStop ensures when the provided channel is closed, the collection is stopped.
 func WithStop(stop <-chan struct{}) CollectionOption {
 	return func(m *collectionShared) {
 		m.stop = stop
 	}
+}
+
+// WithContext ensures that when the provided context is cancelled, the collection is stopped.
+func WithContext(ctx context.Context) CollectionOption {
+	return WithStop(ctx.Done())
 }
 
 // WithPollInterval configures the poll interval used by Informers. Has no effect for other collections.
@@ -153,13 +159,16 @@ type collectionShared struct {
 	wantSpuriousUpdates bool
 }
 
-//nolint:unused // implementing interface
-func (c collectionShared) getName() string {
+func (c collectionShared) getStopCh() <-chan struct{} { //nolint: unused // implementing interface
+	return c.stop
+}
+
+func (c collectionShared) getName() string { //nolint:unused // implementing interface
 	return c.name
 }
 
 //nolint:unused // implementing interface
-func (c collectionShared) getUID() uint64 {
+func (c collectionShared) getUID() uint64 { //nolint:unused // implementing interface
 	return c.uid
 }
 

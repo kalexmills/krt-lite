@@ -26,7 +26,8 @@ func TestRegistrationSync(t *testing.T) {
 			},
 		})
 
-		ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+		ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll),
+			krtlite.WithContext(ctx))
 
 		doTest(t, ctx, ConfigMaps)
 	})
@@ -40,8 +41,9 @@ func TestRegistrationSync(t *testing.T) {
 			Status: corev1.PodStatus{PodIP: "1.2.3.4"},
 		})
 
-		Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"))
-		SimplePods := SimplePodCollection(Pods)
+		Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods("namespace"),
+			krtlite.WithContext(ctx))
+		SimplePods := SimplePodCollection(ctx, Pods)
 
 		doTest(t, ctx, SimplePods)
 	})
@@ -67,12 +69,14 @@ func TestRegistrationSync(t *testing.T) {
 		)
 
 		Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll),
-			krtlite.WithName("Pods"))
+			krtlite.WithName("Pods"), krtlite.WithContext(ctx))
 		Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll),
-			krtlite.WithName("Jobs"))
+			krtlite.WithName("Jobs"), krtlite.WithContext(ctx))
 
-		Containers := krtlite.MergeDisjoint([]krtlite.Collection[Image]{SimpleImageCollectionFromJobs(Jobs), SimpleImageCollectionFromPods(Pods)},
-			krtlite.WithName("Containers"))
+		Containers := krtlite.MergeDisjoint([]krtlite.Collection[Image]{
+			SimpleImageCollectionFromJobs(ctx, Jobs),
+			SimpleImageCollectionFromPods(ctx, Pods),
+		}, krtlite.WithName("Containers"), krtlite.WithContext(ctx))
 
 		doTest(t, ctx, Containers)
 	})

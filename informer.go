@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/ptr"
 	"log/slog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sync"
 	"time"
 )
 
@@ -77,14 +78,10 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),
-		inf: cache.NewSharedIndexInformer(
-			lw,
-			zero[T](),
-			0,
-			cache.Indexers{keyIdx: indexByNamespaceName},
-		),
-		stop:   make(chan struct{}),
+		inf: cache.NewSharedIndexInformer(lw, zero[T](), 0,
+			cache.Indexers{keyIdx: indexByNamespaceName}),
 		synced: make(chan struct{}),
+		mut:    &sync.Mutex{},
 	}
 	i.syncer = &channelSyncer{synced: i.synced}
 	if i.pollInterval == nil {
@@ -96,6 +93,14 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 		syncer.WaitUntilSynced(i.stop)
 		i.logger().Debug("informer cache has synced")
 		close(i.synced)
+
+		// wait for stop and unregister any registered handlers -- so their goroutines can stop.
+		<-i.stop
+		i.mut.Lock()
+		defer i.mut.Unlock()
+		for _, reg := range i.registrations {
+			reg.Unregister()
+		}
 	}()
 
 	go i.inf.Run(i.stop)
@@ -107,9 +112,11 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 type informer[T runtime.Object] struct {
 	collectionShared
 	inf    cache.SharedIndexInformer
-	stop   chan struct{}
 	synced chan struct{}
 	syncer *channelSyncer
+
+	mut           *sync.Mutex
+	registrations []*informerRegistration[T]
 }
 
 // GetKey retrieves an object by its key. For an informer, this must be the namespace and name of the object.
@@ -144,7 +151,11 @@ func (i *informer[T]) Register(f func(ev Event[T])) Registration {
 		i.logger().Error("error registering informer handler", "err", err)
 	}
 
-	return newInformerRegistration(i, reg)
+	res := newInformerRegistration(i, reg)
+	i.mut.Lock()
+	defer i.mut.Unlock()
+	i.registrations = append(i.registrations, res)
+	return res
 }
 
 func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bool) Registration {
@@ -157,7 +168,11 @@ func (i *informer[T]) RegisterBatched(f func(ev []Event[T]), runExistingState bo
 		i.logger().Error("error registering informer event handler", "err", err)
 	}
 
-	return newInformerRegistration(i, reg)
+	res := newInformerRegistration(i, reg)
+	i.mut.Lock()
+	defer i.mut.Unlock()
+	i.registrations = append(i.registrations, res)
+	return res
 }
 
 func (i *informer[T]) WaitUntilSynced(stop <-chan struct{}) (result bool) {

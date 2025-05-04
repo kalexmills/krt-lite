@@ -64,7 +64,8 @@ type derivedCollection[I, O any] struct {
 	indices []*mapIndex[O]
 
 	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
-	registeredHandlers map[*registrationHandler[O]]struct{}
+	regIdx             uint64
+	registeredHandlers map[uint64]*registrationHandler[O]
 
 	syncedCh chan struct{}
 	syncer   *multiSyncer
@@ -90,7 +91,7 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		idxMut:   &sync.RWMutex{},
 
 		regHandlerMut:      &sync.RWMutex{},
-		registeredHandlers: make(map[*registrationHandler[O]]struct{}),
+		registeredHandlers: make(map[uint64]*registrationHandler[O]),
 
 		taskQueue: fifo.NewQueue[task](BufferSize),
 
@@ -138,26 +139,45 @@ func (c *derivedCollection[I, O]) Register(f func(o Event[O])) Registration {
 
 func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExistingState bool) Registration {
 	p := newRegistrationHandler(c, f)
-	p.unregister = c.unregisterFunc(p)
 
+	// add registration handler
 	c.regHandlerMut.Lock()
 	defer c.regHandlerMut.Unlock()
-	c.registeredHandlers[p] = struct{}{}
+	p.unregister = c.unregisterFunc(c.regIdx)
+	c.registeredHandlers[c.regIdx] = p
+	c.regIdx++
+
+	// start syncer + cleanup handler
+	go func() {
+		if runExistingState {
+			c.WaitUntilSynced(c.stop) // wait for collection to sync before snapshotting and sending initial state
+			p.send(c.snapshotInitialState(), true)
+		}
+
+		// wait until stopped and unregister all registered handlers, so they can clean up
+		<-c.stop
+
+		// reg.Unregister also locks c.registeredHandlers in a callback. To avoid deadlocks and data races, we iterate over
+		// a copy.
+		for _, reg := range c.copyHandlerList() {
+			reg.Unregister()
+		}
+	}()
 
 	if !runExistingState {
 		p.markSynced()
-		go p.run()
-		return p
 	}
-
-	go func() {
-		c.WaitUntilSynced(c.stop) // wait for collection to sync before snapshotting and sending initial state
-		p.send(c.snapshotInitialState(), true)
-	}()
 
 	go p.run()
 
 	return p
+}
+
+// handlers provides a copy of all registered handlers.
+func (c *derivedCollection[I, O]) copyHandlerList() []*registrationHandler[O] {
+	c.regHandlerMut.RLock()
+	defer c.regHandlerMut.RUnlock()
+	return slices.Collect(maps.Values(c.registeredHandlers))
 }
 
 func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
@@ -202,8 +222,8 @@ func (c *derivedCollection[I, O]) run() {
 	}
 	c.logger().Debug("parent registration synced")
 
-	// registration is synced so parent has sent all initial events -- push a task to mark ourselves as synced after
-	// processing all input items
+	// registration is synced so parent has sent all initial events -- mark ourselves as synced after processing all input
+	// items
 	c.submitTask(func() {
 		close(c.syncedCh)
 		c.logger().Debug("collection has synced", "parentName", c.parent.getName())
@@ -228,8 +248,8 @@ func (c *derivedCollection[I, O]) processTaskQueue() {
 		case <-c.stop:
 			c.logger().Info("stopping task queue")
 			return
-		case task := <-c.taskQueue.Out():
-			task()
+		case t := <-c.taskQueue.Out():
+			t()
 		}
 	}
 }
@@ -338,7 +358,7 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 
 	c.regHandlerMut.RLock()
 	defer c.regHandlerMut.RUnlock()
-	for h := range c.registeredHandlers {
+	for _, h := range c.registeredHandlers {
 		h.send(events, initialSync)
 	}
 }
@@ -472,12 +492,30 @@ func (c *derivedCollection[I, O]) HasSynced() bool {
 	return c.syncer.HasSynced()
 }
 
-func (c *derivedCollection[I, O]) unregisterFunc(reg *registrationHandler[O]) func() {
+// unregisterFunc must always be called with the c.regHandlerMut held.
+func (c *derivedCollection[I, O]) unregisterFunc(idx uint64) func() {
 	return func() {
 		c.regHandlerMut.Lock()
 		defer c.regHandlerMut.Unlock()
-		delete(c.registeredHandlers, reg)
+		delete(c.registeredHandlers, idx)
 	}
+}
+
+// registrationHandler handles a [fifo.Queue] of batched output events which are being sent to a registered component.
+type registrationHandler[T any] struct {
+	parent Collection[T]
+
+	handler func(o []Event[T])
+	queue   *fifo.Queue[regQueueItem[T]]
+
+	closeStopOnce *sync.Once
+	stopCh        chan struct{}
+
+	closeSyncedOnce *sync.Once
+	syncedCh        chan struct{}
+	syncer          *multiSyncer
+
+	unregister func()
 }
 
 // newRegistrationHandler returns a registration handler nad starts up the internal taskQueue.
@@ -489,29 +527,15 @@ func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[
 		stopCh:          make(chan struct{}),
 		syncedCh:        make(chan struct{}),
 		closeSyncedOnce: &sync.Once{},
+		closeStopOnce:   &sync.Once{},
 	}
+
 	h.syncer = newMultiSyncer(
 		parent,
 		channelSyncer{synced: h.syncedCh},
 	)
 
 	return h
-}
-
-// registrationHandler handles a [fifo.Queue] of batched output events which are being sent to a registered component.
-type registrationHandler[T any] struct {
-	parent Collection[T]
-
-	handler func(o []Event[T])
-	queue   *fifo.Queue[regQueueItem[T]]
-
-	stopCh chan struct{}
-
-	closeSyncedOnce *sync.Once
-	syncedCh        chan struct{}
-	syncer          *multiSyncer
-
-	unregister func()
 }
 
 type regQueueItem[T any] struct {
@@ -521,7 +545,10 @@ type regQueueItem[T any] struct {
 
 func (p *registrationHandler[T]) Unregister() {
 	p.unregister()
-	close(p.stopCh)
+	p.closeStopOnce.Do(func() {
+		close(p.stopCh)
+	})
+	p.parent.logger().Debug("unregistered registration handler")
 }
 
 func (p *registrationHandler[T]) markSynced() {
@@ -540,10 +567,10 @@ func (p *registrationHandler[T]) HasSynced() bool {
 
 func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 	select {
+	case p.queue.In() <- regQueueItem[T]{events: os}:
 	case <-p.stopCh:
 		p.parent.logger().Info("stopping registration handler")
 		return
-	case p.queue.In() <- regQueueItem[T]{events: os}:
 	}
 	if !isInInitialList {
 		return
@@ -555,11 +582,11 @@ func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 		return
 	default:
 		select {
+		// parent is synced once we have received our initial set of events.
+		case p.queue.In() <- regQueueItem[T]{initialEventsSent: true}:
 		case <-p.stopCh:
 			p.parent.logger().Info("stopping registration handler")
 			return
-		// parent is synced once we have received our initial set of events.
-		case p.queue.In() <- regQueueItem[T]{initialEventsSent: true}:
 		}
 	}
 }
@@ -568,9 +595,6 @@ func (p *registrationHandler[T]) run() {
 	go p.queue.Run(p.stopCh)
 	for {
 		select {
-		case <-p.stopCh:
-			p.parent.logger().Debug("stopping registration handler")
-			return
 		case fromQueue, ok := <-p.queue.Out():
 			if !ok {
 				return
@@ -583,6 +607,9 @@ func (p *registrationHandler[T]) run() {
 			if len(fromQueue.events) > 0 {
 				p.handler(fromQueue.events)
 			}
+		case <-p.stopCh:
+			p.parent.logger().Debug("stopping registration handler")
+			return
 		}
 	}
 }

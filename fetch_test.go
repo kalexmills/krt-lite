@@ -26,7 +26,8 @@ func TestFetchOptions(t *testing.T) {
 		}
 	}
 
-	Source := krtlite.NewSingleton[Named](&Named{}, true, krtlite.WithName("Source"))
+	Source := krtlite.NewSingleton[Named](&Named{}, true,
+		krtlite.WithName("Source"), krtlite.WithContext(ctx))
 
 	simpleTest := func(fetchOption krtlite.FetchOption) func(t *testing.T) {
 		return func(t *testing.T) {
@@ -36,11 +37,11 @@ func TestFetchOptions(t *testing.T) {
 				reject("ns", "c"),
 				keep("ns", "d"),
 				reject("ns", "e"),
-			}, krtlite.WithName("Names"))
+			}, krtlite.WithName("Names"), krtlite.WithContext(ctx))
 
 			Filtered := krtlite.FlatMap(Source, func(ktx krtlite.Context, n Named) []LabeledNamed {
 				return krtlite.Fetch(ktx, Names, fetchOption)
-			}, krtlite.WithName("Filtered"), krtlite.WithStop(t.Context().Done()))
+			}, krtlite.WithName("Filtered"), krtlite.WithContext(ctx))
 
 			Filtered.WaitUntilSynced(ctx.Done())
 			AssertEventuallyKeysMatch(t, Filtered, "ns/a", "ns/d")
@@ -77,10 +78,11 @@ func TestFetchOptions(t *testing.T) {
 					service("ns", "d", true),
 					service("ns", "e", false),
 				},
+				krtlite.WithName("Services"), krtlite.WithContext(ctx),
 			)
 			Filtered := krtlite.FlatMap(Source, func(ktx krtlite.Context, n Named) []*corev1.Service {
 				return krtlite.Fetch(ktx, Services, fetchOption)
-			})
+			}, krtlite.WithContext(ctx))
 
 			Filtered.WaitUntilSynced(ctx.Done())
 			AssertEventuallyKeysMatch(t, Filtered, "ns/a", "ns/d")

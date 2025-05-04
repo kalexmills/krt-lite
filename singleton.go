@@ -25,8 +25,9 @@ type singleton[T any] struct {
 
 	currKey string
 
-	mut      *sync.RWMutex
-	handlers map[*func(o []Event[T])]struct{}
+	mut        *sync.RWMutex
+	handlers   map[uint64]*func(o []Event[T])
+	handlerIdx uint64
 }
 
 func newSingleton[T any](opts []CollectionOption) *singleton[T] {
@@ -36,7 +37,7 @@ func newSingleton[T any](opts []CollectionOption) *singleton[T] {
 		syncedCh:         make(chan struct{}),
 		closeSynced:      &sync.Once{},
 		mut:              new(sync.RWMutex),
-		handlers:         make(map[*func(o []Event[T])]struct{}),
+		handlers:         make(map[uint64]*func([]Event[T])),
 	}
 }
 
@@ -69,7 +70,7 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 	if runExistingState {
 		v := s.val.Load()
 		if v != nil {
-			go f([]Event[T]{{ // call handler on another thread to avoid deadlocks.
+			go f([]Event[T]{{ // call handler on another thread to avoid deadlocks while updating handlers
 				New:  v,
 				Type: EventAdd,
 			}})
@@ -78,21 +79,27 @@ func (s *singleton[T]) RegisterBatched(f func(o []Event[T]), runExistingState bo
 
 	s.mut.Lock()
 	defer s.mut.Unlock()
-	s.handlers[&f] = struct{}{}
-	return &singletonRegistration{unregister: s.unregister(&f)}
+	unreg := s.unregister(s.handlerIdx)
+	s.handlers[s.handlerIdx] = &f
+	s.handlerIdx++
+	return &singletonRegistration{unregister: unreg}
 }
 
-func (s *singleton[T]) unregister(f *func(o []Event[T])) func() {
+func (s *singleton[T]) unregister(idx uint64) func() {
 	return func() {
 		s.mut.Lock()
 		defer s.mut.Unlock()
-		delete(s.handlers, f)
+		delete(s.handlers, idx)
 	}
 }
 
 func (s *singleton[T]) WaitUntilSynced(stop <-chan struct{}) bool {
-	<-s.syncedCh
-	return true
+	select {
+	case <-s.syncedCh:
+		return true
+	case <-stop:
+		return false
+	}
 }
 
 func (s *singleton[T]) HasSynced() bool {
@@ -137,7 +144,7 @@ func (s *singleton[T]) Set(now *T) {
 	}
 	s.mut.RLock()
 	defer s.mut.RUnlock()
-	for h := range s.handlers {
+	for _, h := range s.handlers {
 		(*h)([]Event[T]{ev})
 	}
 }

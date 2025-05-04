@@ -1,6 +1,7 @@
 package krtlite_test
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -42,7 +43,7 @@ func NewSimplePod(name, namespace, ip string, labels map[string]string) SimplePo
 }
 
 // SimplePodCollection is a collection of pods with PodIPs.
-func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SimplePod] {
+func SimplePodCollection(ctx context.Context, pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SimplePod] {
 	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Pod) *SimplePod {
 		if i.Status.PodIP == "" {
 			return nil
@@ -52,7 +53,7 @@ func SimplePodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collectio
 			Labeled: NewLabeled(i.Labels),
 			IP:      i.Status.PodIP,
 		}
-	}, krtlite.WithName("SimplePods"))
+	}, krtlite.WithName("SimplePods"), krtlite.WithContext(ctx))
 }
 
 type Image string
@@ -61,7 +62,7 @@ func (i Image) Key() string {
 	return string(i)
 }
 
-func SimpleImageCollectionFromJobs(jobs krtlite.Collection[*batchv1.Job]) krtlite.Collection[Image] {
+func SimpleImageCollectionFromJobs(ctx context.Context, jobs krtlite.Collection[*batchv1.Job]) krtlite.Collection[Image] {
 	return krtlite.FlatMap(jobs, func(ctx krtlite.Context, job *batchv1.Job) []Image {
 		var result []Image
 		for _, c := range job.Spec.Template.Spec.Containers {
@@ -70,10 +71,10 @@ func SimpleImageCollectionFromJobs(jobs krtlite.Collection[*batchv1.Job]) krtlit
 			}
 		}
 		return result
-	}, krtlite.WithName("ImagesFromJobs"))
+	}, krtlite.WithName("ImagesFromJobs"), krtlite.WithContext(ctx))
 }
 
-func SimpleImageCollectionFromPods(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[Image] {
+func SimpleImageCollectionFromPods(ctx context.Context, pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[Image] {
 	return krtlite.FlatMap(pods, func(ctx krtlite.Context, pod *corev1.Pod) []Image {
 		var result []Image
 		for _, c := range pod.Spec.Containers {
@@ -82,7 +83,7 @@ func SimpleImageCollectionFromPods(pods krtlite.Collection[*corev1.Pod]) krtlite
 			}
 		}
 		return result
-	}, krtlite.WithName("ImagesFromPods"))
+	}, krtlite.WithName("ImagesFromPods"), krtlite.WithContext(ctx))
 }
 
 type SimpleNamespace struct {
@@ -101,13 +102,13 @@ func (n SimpleNamespace) Key() string {
 	return n.Name
 }
 
-func SimpleNamespaceCollection(pods krtlite.Collection[*corev1.Namespace]) krtlite.Collection[SimpleNamespace] {
+func SimpleNamespaceCollection(ctx context.Context, pods krtlite.Collection[*corev1.Namespace]) krtlite.Collection[SimpleNamespace] {
 	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Namespace) *SimpleNamespace {
 		return &SimpleNamespace{
 			Named:   NewNamed(i),
 			Labeled: NewLabeled(i.Labels),
 		}
-	}, krtlite.WithName("SimpleNamespaces"))
+	}, krtlite.WithName("SimpleNamespaces"), krtlite.WithContext(ctx))
 }
 
 type SimpleEndpoint struct {
@@ -121,7 +122,7 @@ func (s SimpleEndpoint) Key() string {
 	return "/" + s.Namespace + "/" + s.Service + "/" + s.Pod
 }
 
-func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtlite.Collection[SimpleService]) krtlite.Collection[SimpleEndpoint] {
+func SimpleEndpointsCollection(ctx context.Context, pods krtlite.Collection[SimplePod], services krtlite.Collection[SimpleService]) krtlite.Collection[SimpleEndpoint] {
 	return krtlite.FlatMap[SimpleService, SimpleEndpoint](services, func(ctx krtlite.Context, svc SimpleService) []SimpleEndpoint {
 		pods := krtlite.Fetch(ctx, pods, krtlite.MatchLabels(svc.Selector))
 		var res []SimpleEndpoint
@@ -134,7 +135,7 @@ func SimpleEndpointsCollection(pods krtlite.Collection[SimplePod], services krtl
 			})
 		}
 		return res
-	}, krtlite.WithName("SimpleEndpoints"))
+	}, krtlite.WithName("SimpleEndpoints"), krtlite.WithContext(ctx))
 }
 
 type SizedPod struct {
@@ -142,7 +143,7 @@ type SizedPod struct {
 	Size string
 }
 
-func SizedPodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SizedPod] {
+func SizedPodCollection(ctx context.Context, pods krtlite.Collection[*corev1.Pod]) krtlite.Collection[SizedPod] {
 	return krtlite.Map(pods, func(ctx krtlite.Context, i *corev1.Pod) *SizedPod {
 		s, f := i.Labels["size"]
 		if !f {
@@ -152,7 +153,7 @@ func SizedPodCollection(pods krtlite.Collection[*corev1.Pod]) krtlite.Collection
 			Named: NewNamed(i),
 			Size:  s,
 		}
-	}, krtlite.WithName("SizedPods"))
+	}, krtlite.WithName("SizedPods"), krtlite.WithContext(ctx))
 }
 
 func ListSorted[T any](c krtlite.Collection[T]) []T {
