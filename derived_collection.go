@@ -249,7 +249,11 @@ func (c *derivedCollection[I, O]) processTaskQueue() {
 			c.logger().Info("stopping task queue")
 			return
 		case t := <-c.taskQueue.Out():
-			t()
+			if t != nil {
+				t()
+			} else {
+				c.logger().Warn("task queue received a nil task")
+			}
 		}
 	}
 }

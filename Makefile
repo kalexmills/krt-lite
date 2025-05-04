@@ -34,7 +34,7 @@ lint: ## Runs go fmt.
 
 .PHONY: test
 test: ## Runs go test.
-	@CGO_ENABLED=1 GOTRACEBACK=all go test -race -v ./...
+	@CGO_ENABLED=1 GOTRACEBACK=all go test -failfast -race -v ./...
 
 .PHONY: test-ci
 test-ci: ## Runs go test 10 times
