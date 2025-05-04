@@ -37,8 +37,14 @@ test: ## Runs go test.
 	@CGO_ENABLED=1 GOTRACEBACK=all go test -race -v ./...
 
 .PHONY: test-ci
-test-ci:
+test-ci: ## Runs go test 10 times
 	@CGO_ENABLED=1 GOTRACEBACK=all go test -coverprofile=cover.out -failfast -count 10 -race -shuffle on -v ./...
+
+.PHONY: test-isolate-leak
+test-isolate-leak: ## Runs each test individually to detect leak failures.
+	@go test -c -o tests.tmp
+	@for test in $$(go test -list . | grep -E "^(Test|Example)"); do ./tests.tmp -test.run "^$$test\$$" &>/dev/null && echo -n "." || echo -e "\n$$test failed"; done
+	@rm tests.tmp
 
 .PHONY: bench
 bench: ## Runs go test with benchmarks.

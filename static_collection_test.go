@@ -8,10 +8,11 @@ import (
 )
 
 func TestStaticCollection(t *testing.T) {
-	_, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	c := krtlite.NewStaticCollection[Named](nil, []Named{{"ns", "a"}}, krtlite.WithName("c"))
+	c := krtlite.NewStaticCollection[Named](nil, []Named{{"ns", "a"}},
+		krtlite.WithName("c"), krtlite.WithContext(ctx))
 	assert.True(t, c.HasSynced(), "should start synced")
 	assert.Equal(t, []Named{{"ns", "a"}}, c.List())
 

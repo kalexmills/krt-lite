@@ -71,7 +71,7 @@ func TestInformer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 
-		ConfigMaps := r.Collection(ctx)
+		ConfigMaps := r.Collection(ctx, krtlite.WithContext(ctx))
 
 		tt := NewTracker[*corev1.ConfigMap](t)
 		ConfigMaps.Register(tt.Track)
@@ -234,7 +234,8 @@ func TestTypedClientInformerSync(t *testing.T) {
 		},
 	})
 
-	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll))
+	ConfigMaps := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c.CoreV1().ConfigMaps(metav1.NamespaceAll),
+		krtlite.WithContext(ctx))
 
 	var (
 		gotEvent  atomic.Bool

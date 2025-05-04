@@ -71,10 +71,10 @@ func TestMergeDisjointSync(t *testing.T) {
 		},
 	)
 
-	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll))
-	Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll))
-	PodImages := SimpleImageCollectionFromPods(Pods)
-	JobImages := SimpleImageCollectionFromJobs(Jobs)
+	Pods := krtlite.NewTypedClientInformer[*corev1.Pod](ctx, c.CoreV1().Pods(metav1.NamespaceAll), krtlite.WithContext(ctx))
+	Jobs := krtlite.NewTypedClientInformer[*batchv1.Job](ctx, c.BatchV1().Jobs(metav1.NamespaceAll), krtlite.WithContext(ctx))
+	PodImages := SimpleImageCollectionFromPods(ctx, Pods)
+	JobImages := SimpleImageCollectionFromJobs(ctx, Jobs)
 
 	AllImages := krtlite.MergeDisjoint([]krtlite.Collection[Image]{PodImages, JobImages})
 

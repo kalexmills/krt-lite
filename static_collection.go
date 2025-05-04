@@ -28,7 +28,8 @@ type staticList[T any] struct {
 
 	indices []*mapIndex[T]
 
-	handlers map[*registrationHandler[T]]struct{}
+	regIdx   uint64
+	handlers map[uint64]*registrationHandler[T]
 }
 
 var _ StaticCollection[any] = &staticList[any]{}
@@ -45,13 +46,26 @@ func NewStaticCollection[T any](synced Syncer, vals []T, opts ...CollectionOptio
 		collectionShared: newCollectionShared(opts),
 		vals:             make(map[string]T, len(vals)),
 		syncer:           synced,
-		handlers:         make(map[*registrationHandler[T]]struct{}),
+		handlers:         make(map[uint64]*registrationHandler[T]),
 	}
 	for _, t := range vals {
 		k := GetKey(t)
 		res.vals[k] = t
 	}
+	go func() {
+		<-res.stop
+		for _, h := range res.copyHandlerList() {
+			h.Unregister() // Unregister grabs the lock as well, so we make a defensive copy of handlers before unregistering
+		}
+	}()
+
 	return res
+}
+
+func (s *staticList[T]) copyHandlerList() []*registrationHandler[T] {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Collect(maps.Values(s.handlers))
 }
 
 func (s *staticList[T]) Register(f func(o Event[T])) Registration {
@@ -62,21 +76,22 @@ func (s *staticList[T]) Register(f func(o Event[T])) Registration {
 	}, true)
 }
 
-func (s *staticList[T]) unregisterFunc(h *registrationHandler[T]) func() {
+func (s *staticList[T]) unregisterFunc(idx uint64) func() {
 	return func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		delete(s.handlers, h)
+		delete(s.handlers, idx)
 	}
 }
 
 func (s *staticList[T]) RegisterBatched(f func(o []Event[T]), runExistingState bool) Registration {
 	handler := newRegistrationHandler[T](s, f)
-	handler.unregister = s.unregisterFunc(handler)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.handlers[handler] = struct{}{}
+	handler.unregister = s.unregisterFunc(s.regIdx)
+	s.handlers[s.regIdx] = handler
+	s.regIdx++
 
 	if !runExistingState {
 		handler.markSynced()
@@ -202,7 +217,7 @@ func (s *staticList[T]) distributeEvents(evs []Event[T]) {
 	for _, h := range s.indices {
 		h.handleEvents(evs)
 	}
-	for h := range s.handlers {
+	for _, h := range s.handlers {
 		h.send(evs, false)
 	}
 }

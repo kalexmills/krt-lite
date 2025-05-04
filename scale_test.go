@@ -12,7 +12,9 @@ import (
 	"time"
 )
 
-// TestDetectDroppedEvents ensures that events are not dropped at larger scales.
+// TestDetectDroppedEvents ensures that events are not dropped at larger scales. Essentially the Benchmark with
+// assertions -- during development, we noticed events were being "dropped" due to deduplication. This test exists to
+// ensure we don't drop events via another bug.
 func TestDetectDroppedEvents(t *testing.T) {
 	const (
 		N       = 100
@@ -65,8 +67,10 @@ func TestDetectDroppedEvents(t *testing.T) {
 
 	events := make(chan string, K)
 
-	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c, krtlite.WithName("Pods"))
-	Services := krtlite.NewInformer[*corev1.Service, corev1.ServiceList](ctx, c, krtlite.WithName("Services"))
+	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c,
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
+	Services := krtlite.NewInformer[*corev1.Service, corev1.ServiceList](ctx, c,
+		krtlite.WithName("Services"), krtlite.WithContext(ctx))
 	ServicesByNamespace := krtlite.NewNamespaceIndex(Services)
 
 	Workloads := krtlite.Map(Pods, func(ktx krtlite.Context, p *corev1.Pod) *Workload {
@@ -86,7 +90,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 			result.ServiceNames = append(result.ServiceNames, service.Name)
 		}
 		return result
-	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
+	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates(), krtlite.WithContext(ctx))
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
