@@ -374,7 +374,6 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 	}
 
 	// generate fake events based on updates.
-
 	res := make([]Event[I], 0, len(events))
 
 	deletions := make([]key[I], 0, len(events))
@@ -411,27 +410,31 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[any]) map[key[I]]struct{} {
 	result := make(map[key[I]]struct{})
 	depMap := c.depMaps[dep.collectionID]
+
+nextEvent:
 	for _, ev := range events {
 		// search through the depMap for matches, to avoid searching the entire collection.
 		if depMap != nil {
-			found := false
-			for _, item := range ev.Items() {
-				for iKey := range depMap.GetLeft(GetKey[any](item)) {
-					found = true
-					result[iKey] = struct{}{}
-				}
+			key := GetKey[any](ev.Latest())
+
+			if ev.Type == EventDelete {
+				depMap.RemoveRight(key)
 			}
-			if found {
-				continue
+
+			for iKey := range depMap.GetLeft(key) {
+				result[iKey] = struct{}{}
+				continue nextEvent
 			}
 		}
 
-		// if no match is found, check all dependencies across all keys for a match.
+		// if no match was found, check all dependencies across all input keys for a match.
+	nextKey:
 		for iKey, depsForKey := range c.dependencies {
 			for _, depForKey := range depsForKey {
 				for _, item := range ev.Items() {
 					if depForKey.Matches(item) {
 						result[iKey] = struct{}{}
+						continue nextKey
 					}
 				}
 			}
@@ -443,6 +446,9 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 
 // dependencyUpdate updates dependency tracking. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, O]) {
+	threshold := TrackingOverhead * (ktx.collectionSize + len(c.outputs))
+
+	// check every dependency
 	c.dependencies[iKey] = ktx.dependencies
 	for _, dep := range ktx.dependencies {
 		collID := dep.collectionID
@@ -452,14 +458,11 @@ func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, 
 		}
 		depMap := c.depMaps[collID]
 
-		// if this key exceeded its max track count, reset tracking information for this key so all dependencies are
-		// checked during updates.
-		if _, ok := ktx.resetTracking[collID]; ok {
-			depMap.RemoveLeft(iKey)
-			continue
-		}
-
-		for k := range ktx.trackedKeys {
+		// TODO: a depMap.SetLeft -- instead of Add.
+		for k := range ktx.trackedKeys[collID] {
+			if depMap.Size() > threshold { // stop tracking if we've run out of space for this collection.
+				depMap.RemoveLeft(iKey) // we must remove keys we're no longer tracking
+			}
 			depMap.Add(iKey, k)
 		}
 	}

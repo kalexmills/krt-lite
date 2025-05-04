@@ -12,14 +12,17 @@ import (
 	"strings"
 )
 
+// TrackingOverhead controls memory overhead for dependency tracking.
+var TrackingOverhead = 100
+
 // Context is used to track dependencies between collections created via [FlatMap] and [Map], and collections accessed
 // via [Fetch]. See [Fetch] for details.
 type Context interface {
 	// registerDependency registers the provided dependency and syncer with the parent collection. Returns the dependency
 	// ID for the registered collection.
 	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer) bool
-	trackKeys(keys []string)
-	resetTrackingForCollection(collID uint64)
+	trackKeys(collectionID uint64, keys []string)
+	setCollectionSize(size int)
 }
 
 // Fetch calls List on the provided Collection, and can be used to subscribe Collections created by [Map] or [FlatMap]
@@ -60,6 +63,8 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 	})
 
 	ts := c.List()
+	d.collectionSize = len(ts)
+
 	var out []T
 	for _, t := range ts {
 		if d.Matches(t) {
@@ -67,18 +72,11 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 		}
 	}
 
-	if d.maxTrackCount != nil {
-		if uint(len(out)) <= *d.maxTrackCount {
-			var keys []string
-			for i := uint(0); i < min(*d.maxTrackCount, uint(len(out))); i++ {
-				keys = append(keys, GetKey[any](out[i]))
-			}
-			ktx.trackKeys(keys)
-		} else {
-			// reset tracking to ensure updates are not missed due to an incomplete index
-			ktx.resetTrackingForCollection(d.collectionID)
-		}
+	keys := make([]string, 0, len(out))
+	for i := 0; i < len(out); i++ {
+		keys = append(keys, GetKey[any](out[i]))
 	}
+	ktx.trackKeys(d.collectionID, keys)
 
 	return out
 }
@@ -87,8 +85,7 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 type dependency struct {
 	collectionID   uint64
 	collectionName string
-
-	maxTrackCount *uint
+	collectionSize int // total size of the collection when Fetch was called.
 
 	filterFunc              func(any) bool
 	filterKeys              map[string]struct{}
@@ -153,15 +150,6 @@ func (d *dependency) Matches(object any) bool {
 	}
 
 	return true
-}
-
-// WithMaxTrackCount sets the maximum number of keys tracked via Fetch. Any fetch call which returns more keys than the
-// configured will not be tracked. For keys without tracking information, a full scan of the collection is performed
-// for each fetched item when updates occur.
-func WithMaxTrackCount(maxKeys uint) FetchOption {
-	return func(d *dependency) {
-		d.maxTrackCount = ptr.To(maxKeys)
-	}
 }
 
 // MatchKeys ensures [Fetch] only returns objects with matching keys. MatchKeys may be used multiple times in the same
@@ -296,18 +284,20 @@ type kontext[I, O any] struct {
 
 	// trackedKeys contains a record of all filtered items fetched this fetch. The length of trackedKeys is upper bounded
 	// by MaxFetchKeyTracking
-	trackedKeys map[string]struct{}
-
-	resetTracking map[uint64]struct{}
+	trackedKeys    map[uint64]map[string]struct{}
+	collectionSize int
 }
 
 func newKontext[I, O any](collection *derivedCollection[I, O], iKey key[I]) *kontext[I, O] {
 	return &kontext[I, O]{
-		collection:    collection,
-		key:           iKey,
-		trackedKeys:   make(map[string]struct{}),
-		resetTracking: make(map[uint64]struct{}),
+		collection:  collection,
+		key:         iKey,
+		trackedKeys: make(map[uint64]map[string]struct{}),
 	}
+}
+
+func (ktx *kontext[I, O]) setCollectionSize(size int) {
+	ktx.collectionSize = size
 }
 
 func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register func(func([]Event[any])) Syncer) bool {
@@ -332,14 +322,13 @@ func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 	return false
 }
 
-func (ktx *kontext[I, O]) trackKeys(keys []string) {
-	for _, key := range keys {
-		ktx.trackedKeys[key] = struct{}{}
+func (ktx *kontext[I, O]) trackKeys(collectionID uint64, keys []string) {
+	if _, ok := ktx.trackedKeys[collectionID]; !ok {
+		ktx.trackedKeys[collectionID] = make(map[string]struct{})
 	}
-}
-
-func (ktx *kontext[I, O]) resetTrackingForCollection(collID uint64) {
-	ktx.resetTracking[collID] = struct{}{}
+	for _, key := range keys {
+		ktx.trackedKeys[collectionID][key] = struct{}{}
+	}
 }
 
 func castEvent[I, O any](o Event[I]) Event[O] {
