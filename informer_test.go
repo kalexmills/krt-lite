@@ -201,7 +201,7 @@ func TestInformerFilters(t *testing.T) {
 		tt.Empty()
 	}
 
-	// TODO: needs an envtest to test NewTypedClientInformer -- k8s fake package doesn't support filtering
+	// TODO(#16): needs an envtest to test NewTypedClientInformer -- k8s fake package doesn't support filtering
 
 	t.Run("NewInformer", func(t *testing.T) {
 		doTest(t, &clientRig{
