@@ -150,6 +150,37 @@ func WithSpuriousUpdates() CollectionOption {
 	}
 }
 
+// WithFilter configures informers to perform server-side filtering. Has no effect for other collections.
+func WithFilter(filter InformerFilter) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &filter
+	}
+}
+
+func WithFilterByLabel(labelSelector string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			LabelSelector: labelSelector,
+		}
+	}
+}
+
+func WithFilterByField(fieldSelector string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			FieldSelector: fieldSelector,
+		}
+	}
+}
+
+func WithFilterByNamespace(namespace string) CollectionOption {
+	return func(m *collectionShared) {
+		m.filter = &InformerFilter{
+			Namespace: namespace,
+		}
+	}
+}
+
 // collectionShared contains metadata and fields common to controllers.
 type collectionShared struct {
 	uid                 uint64
@@ -157,6 +188,7 @@ type collectionShared struct {
 	stop                <-chan struct{}
 	pollInterval        *time.Duration
 	wantSpuriousUpdates bool
+	filter              *InformerFilter
 }
 
 func (c collectionShared) getStopCh() <-chan struct{} { //nolint: unused // implementing interface

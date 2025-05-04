@@ -331,7 +331,6 @@ func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 	}
 
 	ktx.dependencies = append(ktx.dependencies, d)
-	ktx.collection.logger().Info("added dependency", "count", len(ktx.dependencies))
 	return false
 }
 

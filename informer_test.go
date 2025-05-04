@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	typedfake "k8s.io/client-go/kubernetes/fake"
-	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -18,38 +17,38 @@ import (
 )
 
 type rig interface {
-	Collection(ctx context.Context) krtlite.Collection[*corev1.ConfigMap]
+	Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap]
 	Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error)
 	Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error)
 	Delete(ctx context.Context, t *corev1.ConfigMap) error
 }
 
 type typedClientRig struct {
-	c v1.ConfigMapInterface
+	c *typedfake.Clientset
 }
 
-func (r typedClientRig) Collection(ctx context.Context) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c, krtlite.WithContext(ctx))
+func (r typedClientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
+	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c.CoreV1().ConfigMaps(""), opts...)
 }
 
 func (r typedClientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.Create(ctx, t, metav1.CreateOptions{}) //nolint: wrapcheck
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Create(ctx, t, metav1.CreateOptions{}) //nolint: wrapcheck
 }
 
 func (r typedClientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.Update(ctx, t, metav1.UpdateOptions{}) //nolint: wrapcheck
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Update(ctx, t, metav1.UpdateOptions{}) //nolint: wrapcheck
 }
 
 func (r typedClientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
-	return r.c.Delete(ctx, t.Name, metav1.DeleteOptions{}) //nolint: wrapcheck
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Delete(ctx, t.Name, metav1.DeleteOptions{}) //nolint: wrapcheck
 }
 
 type clientRig struct {
 	c client.WithWatch
 }
 
-func (r clientRig) Collection(ctx context.Context) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c, krtlite.WithContext(ctx))
+func (r clientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
+	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c, opts...)
 }
 
 func (r clientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
@@ -72,7 +71,7 @@ func TestInformer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 
-		ConfigMaps := r.Collection(ctx)
+		ConfigMaps := r.Collection(ctx, krtlite.WithContext(ctx))
 
 		tt := NewTracker[*corev1.ConfigMap](t)
 		ConfigMaps.Register(tt.Track)
@@ -126,17 +125,100 @@ func TestInformer(t *testing.T) {
 	}
 
 	t.Run("NewTypedClientInformer", func(t *testing.T) {
-		c := typedfake.NewClientset()
-		cmClient := c.CoreV1().ConfigMaps("ns")
-
 		doTest(t, &typedClientRig{
-			c: cmClient,
+			c: typedfake.NewClientset(),
 		})
 	})
 
 	t.Run("NewInformer", func(t *testing.T) {
 		doTest(t, &clientRig{
 			c: fake.NewFakeClient(),
+		})
+	})
+}
+
+func TestInformerFilters(t *testing.T) {
+	doTest := func(t *testing.T, r rig) {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+
+		cmA := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "a",
+				Namespace: "ns1",
+				Labels: map[string]string{
+					"foo": "baz",
+				},
+			},
+		}
+		cmB := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "b",
+				Namespace: "ns1",
+				Labels: map[string]string{
+					"foo": "bar",
+				},
+			},
+		}
+		cmC := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "c",
+				Namespace: "ns2",
+				Labels: map[string]string{
+					"foo": "baz",
+				},
+			},
+		}
+
+		for _, cm := range []*corev1.ConfigMap{cmA, cmB, cmC} {
+			_, err := r.Create(ctx, cm)
+			require.NoError(t, err)
+		}
+
+		ConfigMaps := r.Collection(ctx, krtlite.WithFilterByNamespace("ns1"), krtlite.WithContext(ctx))
+		tt := NewTracker[*corev1.ConfigMap](t)
+		reg := ConfigMaps.Register(tt.Track)
+
+		tt.Wait("add/ns1/a", "add/ns1/b")
+		tt.Empty()
+
+		reg.Unregister()
+
+		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByField("metadata.name=c"), krtlite.WithContext(ctx))
+		tt = NewTracker[*corev1.ConfigMap](t)
+		reg = ConfigMaps.Register(tt.Track)
+
+		tt.Wait("add/ns2/c")
+		tt.Empty()
+
+		reg.Unregister()
+
+		ConfigMaps = r.Collection(ctx, krtlite.WithFilterByLabel("foo=baz"), krtlite.WithContext(ctx))
+		tt = NewTracker[*corev1.ConfigMap](t)
+		_ = ConfigMaps.Register(tt.Track)
+
+		tt.Wait("add/ns1/a", "add/ns2/c")
+		tt.Empty()
+	}
+
+	// TODO(#16): needs an envtest to test NewTypedClientInformer -- k8s fake package doesn't support filtering
+
+	t.Run("NewInformer", func(t *testing.T) {
+		doTest(t, &clientRig{
+			// fake controller runtime clients require indices for indexing by field. Namespace filters are implemented as
+			// field filters.
+			c: fake.NewClientBuilder().
+				WithIndex(&corev1.ConfigMap{}, "metadata.name",
+					func(object client.Object) []string {
+						return []string{object.(*corev1.ConfigMap).Name}
+					},
+				).
+				WithIndex(&corev1.ConfigMap{}, "metadata.namespace",
+					func(object client.Object) []string {
+						return []string{object.(*corev1.ConfigMap).Namespace}
+					},
+				).
+				Build(),
 		})
 	})
 }

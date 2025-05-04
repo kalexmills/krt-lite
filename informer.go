@@ -30,8 +30,19 @@ const keyIdx = "namespace/name"
 //
 //	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](...)
 func NewInformer[T ComparableObject, TL any, PT Ptr[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
+	shared := newCollectionShared(opts)
+	var listOpts *metav1.ListOptions
+	if shared.filter != nil {
+		listOpts = shared.filter.ListOptions()
+	}
+
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			if listOpts != nil {
+				options.LabelSelector = listOpts.LabelSelector
+				options.FieldSelector = listOpts.FieldSelector
+			}
+
 			tl := PT(new(TL))
 			if err := c.List(ctx, tl, metaOptionsToCtrlOptions(options)...); err != nil {
 				return nil, fmt.Errorf("error calling list: %w", err)
@@ -39,6 +50,11 @@ func NewInformer[T ComparableObject, TL any, PT Ptr[TL]](ctx context.Context, c 
 			return tl, nil
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			if listOpts != nil {
+				options.LabelSelector = listOpts.LabelSelector
+				options.FieldSelector = listOpts.FieldSelector
+			}
+
 			tl := PT(new(TL))
 			wl, err := c.Watch(ctx, tl, metaOptionsToCtrlOptions(options)...)
 			if err != nil {
@@ -61,25 +77,42 @@ type Ptr[T any] interface {
 //
 // All objects in this Collection will have keys in the format {namespace}/{name}, or {name} for cluster-scoped objects.
 func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
+	shared := newCollectionShared(opts)
+	var listOpts *metav1.ListOptions
+	if shared.filter != nil {
+		listOpts = shared.filter.ListOptions()
+	}
+
 	return NewListerWatcherInformer[T](&cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			if listOpts != nil {
+				opts.FieldSelector = listOpts.FieldSelector
+				opts.LabelSelector = listOpts.LabelSelector
+			}
 			return c.List(ctx, opts)
 		},
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			if listOpts != nil {
+				opts.FieldSelector = listOpts.FieldSelector
+				opts.LabelSelector = listOpts.LabelSelector
+			}
 			return c.Watch(ctx, opts)
 		},
 	}, opts...)
 }
 
-// NewListerWatcherInformer creates a new Collection from items returned by the provided cache.ListerWatcher, which
+// NewListerWatcherInformer creates a new Collection from items returned by the provided [cache.ListerWatcher], which
 // must return objects of type T.
 //
-// Objects in this Collection will have keys in the format [{namespace}/{name}, or {name} for cluster-scoped objects.
+// Key for objects in this Collection are in the format {namespace}/{name}, or {name} for cluster-scoped objects.
+//
+// Passing WithFilter to this function has no effect. Filtering must be performed by the passed [cache.ListerWatcher].
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),
 		inf: cache.NewSharedIndexInformer(lw, zero[T](), 0,
-			cache.Indexers{keyIdx: indexByNamespaceName}),
+			cache.Indexers{keyIdx: indexByNamespaceName},
+		),
 		synced: make(chan struct{}),
 		mut:    &sync.Mutex{},
 	}
@@ -106,6 +139,27 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	go i.inf.Run(i.stop)
 
 	return &i
+}
+
+// InformerFilter provides server-side filters that apply to Informers.
+type InformerFilter struct {
+	LabelSelector string
+	FieldSelector string
+	Namespace     string
+}
+
+func (f InformerFilter) ListOptions() *metav1.ListOptions {
+	opts := metav1.ListOptions{
+		LabelSelector: f.LabelSelector,
+		FieldSelector: f.FieldSelector,
+	}
+	if f.Namespace != "" {
+		if opts.FieldSelector != "" {
+			opts.FieldSelector += ","
+		}
+		opts.FieldSelector += "metadata.namespace=" + f.Namespace
+	}
+	return &opts
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[T].
