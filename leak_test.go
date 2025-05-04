@@ -1,4 +1,4 @@
-package krtlite
+package krtlite_test
 
 import (
 	"istio.io/istio/tests/util/leak"

@@ -199,7 +199,6 @@ func (c collectionShared) getName() string { //nolint:unused // implementing int
 	return c.name
 }
 
-//nolint:unused // implementing interface
 func (c collectionShared) getUID() uint64 { //nolint:unused // implementing interface
 	return c.uid
 }
