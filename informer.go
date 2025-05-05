@@ -125,13 +125,19 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 	return &i
 }
 
+// NewDynamicInformer creates an informer that fetches using the provided dynamic client.
 func NewDynamicInformer(dynamicClient dynamic.Interface, gvr schema.GroupVersionResource, opts ...CollectionOption) Collection[*unstructured.Unstructured] {
-	// TODO: use tweak list options.
+	shared := newCollectionShared(opts)
+
 	inf := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, gvr, metav1.NamespaceAll, 0,
-		cache.Indexers{keyIdx: indexByNamespaceName}, nil)
+		cache.Indexers{keyIdx: indexByNamespaceName}, func(options *metav1.ListOptions) {
+			opts := shared.filter.ListOptions()
+			options.LabelSelector = opts.LabelSelector
+			options.FieldSelector = opts.FieldSelector
+		})
 
 	res := &informer[*unstructured.Unstructured]{
-		collectionShared: newCollectionShared(opts),
+		collectionShared: shared,
 		inf:              inf.Informer(),
 		mut:              &sync.Mutex{},
 	}
