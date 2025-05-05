@@ -1,13 +1,21 @@
 package krtlite_test
 
 import (
+	"bytes"
 	"context"
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	typedfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -21,49 +29,6 @@ type rig interface {
 	Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error)
 	Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error)
 	Delete(ctx context.Context, t *corev1.ConfigMap) error
-}
-
-type typedClientRig struct {
-	c *typedfake.Clientset
-}
-
-func (r typedClientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c.CoreV1().ConfigMaps(""), opts...)
-}
-
-func (r typedClientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.CoreV1().ConfigMaps(t.Namespace).Create(ctx, t, metav1.CreateOptions{}) //nolint: wrapcheck
-}
-
-func (r typedClientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return r.c.CoreV1().ConfigMaps(t.Namespace).Update(ctx, t, metav1.UpdateOptions{}) //nolint: wrapcheck
-}
-
-func (r typedClientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
-	return r.c.CoreV1().ConfigMaps(t.Namespace).Delete(ctx, t.Name, metav1.DeleteOptions{}) //nolint: wrapcheck
-}
-
-type clientRig struct {
-	c client.WithWatch
-}
-
-func (r clientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
-	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c, opts...)
-}
-
-func (r clientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	err := r.c.Create(ctx, t)
-	return t, err //nolint: wrapcheck
-}
-
-func (r clientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	err := r.c.Update(ctx, t)
-	return t, err //nolint: wrapcheck
-}
-
-func (r clientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
-	err := r.c.Delete(ctx, t)
-	return err //nolint: wrapcheck
 }
 
 func TestInformer(t *testing.T) {
@@ -135,6 +100,131 @@ func TestInformer(t *testing.T) {
 			c: fake.NewFakeClient(),
 		})
 	})
+
+	t.Run("NewDynamicInformer", func(t *testing.T) {
+		doTest(t, &dynamicRig{
+			gvr:    schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"},
+			client: dynamicfake.NewSimpleDynamicClient(scheme.Scheme),
+		})
+	})
+}
+
+type typedClientRig struct {
+	c *typedfake.Clientset
+}
+
+func (r typedClientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
+	return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, r.c.CoreV1().ConfigMaps(""), opts...)
+}
+
+func (r typedClientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Create(ctx, t, metav1.CreateOptions{}) //nolint: wrapcheck
+}
+
+func (r typedClientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Update(ctx, t, metav1.UpdateOptions{}) //nolint: wrapcheck
+}
+
+func (r typedClientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
+	return r.c.CoreV1().ConfigMaps(t.Namespace).Delete(ctx, t.Name, metav1.DeleteOptions{}) //nolint: wrapcheck
+}
+
+type clientRig struct {
+	c client.WithWatch
+}
+
+func (r clientRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
+	return krtlite.NewInformer[*corev1.ConfigMap, corev1.ConfigMapList](ctx, r.c, opts...)
+}
+
+func (r clientRig) Create(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	err := r.c.Create(ctx, t)
+	return t, err //nolint: wrapcheck
+}
+
+func (r clientRig) Update(ctx context.Context, t *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	err := r.c.Update(ctx, t)
+	return t, err //nolint: wrapcheck
+}
+
+func (r clientRig) Delete(ctx context.Context, t *corev1.ConfigMap) error {
+	err := r.c.Delete(ctx, t)
+	return err //nolint: wrapcheck
+}
+
+type dynamicRig struct {
+	gvr    schema.GroupVersionResource
+	client dynamic.Interface
+}
+
+func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
+	dynamicColl := krtlite.NewDynamicInformer(d.client, d.gvr)
+	return krtlite.Map(dynamicColl, func(ktx krtlite.Context, u *unstructured.Unstructured) **corev1.ConfigMap {
+		res := &corev1.ConfigMap{}
+		err := fromUnstructured(u, res)
+		if err != nil {
+			panic(err)
+		}
+		return &res
+	})
+}
+
+func toUnstructured[T runtime.Object](t T) (*unstructured.Unstructured, error) {
+	codec := scheme.Codecs.LegacyCodec(schema.GroupVersion{Group: corev1.GroupName, Version: "v1"})
+
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
+
+	if err := codec.Encode(t, buf); err != nil {
+		return nil, err
+	}
+
+	u := &unstructured.Unstructured{}
+
+	err := json.Unmarshal(buf.Bytes(), &u)
+	return u, err
+}
+
+func fromUnstructured(u *unstructured.Unstructured, obj runtime.Object) error {
+	tmp, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+
+	codec := scheme.Codecs.LegacyCodec(schema.GroupVersion{Group: corev1.GroupName, Version: "v1"})
+	_, _, err = codec.Decode(tmp, nil, obj)
+	return err
+}
+
+func (d dynamicRig) doUnstructured(ctx context.Context, t *corev1.ConfigMap, doIt func(ctx context.Context, t *unstructured.Unstructured) (*unstructured.Unstructured, error)) (*corev1.ConfigMap, error) {
+	u, err := toUnstructured(t)
+	if err != nil {
+		return nil, err
+	}
+
+	uPtr, err := doIt(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+
+	var res corev1.ConfigMap
+	err = fromUnstructured(uPtr, &res)
+	return &res, err
+}
+
+func (d dynamicRig) Create(ctx context.Context, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return d.doUnstructured(ctx, cm, func(ctx context.Context, u *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+		return d.client.Resource(d.gvr).Namespace(cm.Namespace).Create(ctx, u, metav1.CreateOptions{})
+	})
+}
+
+func (d dynamicRig) Update(ctx context.Context, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return d.doUnstructured(ctx, cm, func(ctx context.Context, u *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+		return d.client.Resource(d.gvr).Namespace(cm.Namespace).Update(ctx, u, metav1.UpdateOptions{})
+	})
+}
+
+func (d dynamicRig) Delete(ctx context.Context, cm *corev1.ConfigMap) error {
+	return d.client.Resource(d.gvr).Namespace(cm.Namespace).Delete(ctx, cm.Name, metav1.DeleteOptions{})
 }
 
 func TestInformerFilters(t *testing.T) {

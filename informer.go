@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 	"log/slog"
@@ -113,32 +117,36 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 		inf: cache.NewSharedIndexInformer(lw, zero[T](), 0,
 			cache.Indexers{keyIdx: indexByNamespaceName},
 		),
-		synced: make(chan struct{}),
-		mut:    &sync.Mutex{},
-	}
-	i.syncer = &channelSyncer{synced: i.synced}
-	if i.pollInterval == nil {
-		i.pollInterval = ptr.To(100 * time.Millisecond)
+		mut: &sync.Mutex{},
 	}
 
-	go func() {
-		syncer := &pollingSyncer{interval: *i.pollInterval, hasSynced: i.inf.HasSynced}
-		syncer.WaitUntilSynced(i.stop)
-		i.logger().Debug("informer cache has synced")
-		close(i.synced)
-
-		// wait for stop and unregister any registered handlers -- so their goroutines can stop.
-		<-i.stop
-		i.mut.Lock()
-		defer i.mut.Unlock()
-		for _, reg := range i.registrations {
-			reg.Unregister()
-		}
-	}()
-
-	go i.inf.Run(i.stop)
+	i.run()
 
 	return &i
+}
+
+func NewDynamicInformer(dynamicClient dynamic.Interface, gvr schema.GroupVersionResource, opts ...CollectionOption) Collection[*unstructured.Unstructured] {
+	// TODO: use tweak list options.
+	inf := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, gvr, metav1.NamespaceAll, 0,
+		cache.Indexers{keyIdx: indexByNamespaceName}, nil)
+
+	res := &informer[*unstructured.Unstructured]{
+		collectionShared: newCollectionShared(opts),
+		inf:              inf.Informer(),
+		mut:              &sync.Mutex{},
+	}
+
+	if res.pollInterval == nil {
+		res.pollInterval = ptr.To(100 * time.Millisecond)
+	}
+	res.syncer = &pollingSyncer{
+		interval:  *res.pollInterval,
+		hasSynced: res.inf.HasSynced,
+	}
+
+	res.run()
+
+	return res
 }
 
 // InformerFilter provides server-side filters that apply to Informers.
@@ -163,14 +171,32 @@ func (f InformerFilter) ListOptions() *metav1.ListOptions {
 }
 
 // informer knows how to turn a cache.SharedIndexInformer into a Collection[T].
-type informer[T runtime.Object] struct {
+type informer[T any] struct {
 	collectionShared
 	inf    cache.SharedIndexInformer
-	synced chan struct{}
-	syncer *channelSyncer
+	syncer Syncer
 
 	mut           *sync.Mutex
 	registrations []*informerRegistration[T]
+}
+
+// run starts this informer. It starts new goroutines which are shutdown when stop is closed. It does not block.
+func (i *informer[T]) run() {
+	if i.pollInterval == nil {
+		i.pollInterval = ptr.To(100 * time.Millisecond)
+	}
+	i.syncer = &pollingSyncer{interval: *i.pollInterval, hasSynced: i.inf.HasSynced}
+
+	go func() {
+		i.inf.Run(i.stop)
+
+		// unregister all handlers so they can clean up
+		i.mut.Lock()
+		defer i.mut.Unlock()
+		for _, reg := range i.registrations {
+			reg.Unregister()
+		}
+	}()
 }
 
 // GetKey retrieves an object by its key. For an informer, this must be the namespace and name of the object.
@@ -294,7 +320,7 @@ func (i *informerIndexer[T]) objectHasKey(t T, key string) bool { //nolint: unus
 	return false
 }
 
-type eventHandler[T runtime.Object] struct {
+type eventHandler[T any] struct {
 	handler func(ev Event[T], syncing bool)
 }
 
@@ -349,7 +375,7 @@ func metaOptionsToCtrlOptions(opts metav1.ListOptions) []client.ListOption {
 }
 
 // extractRuntimeObject retrieves a runtime.Object from its argument.
-func extractRuntimeObject[T runtime.Object](obj any) *T {
+func extractRuntimeObject[T any](obj any) *T {
 	if obj == nil {
 		return nil
 	}
@@ -379,13 +405,13 @@ type TypedClient[TL runtime.Object] interface {
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 }
 
-type informerRegistration[T runtime.Object] struct {
+type informerRegistration[T any] struct {
 	parent *informer[T]
 	reg    cache.ResourceEventHandlerRegistration
 	syncer *pollingSyncer
 }
 
-func newInformerRegistration[T runtime.Object](parent *informer[T], reg cache.ResourceEventHandlerRegistration) *informerRegistration[T] {
+func newInformerRegistration[T any](parent *informer[T], reg cache.ResourceEventHandlerRegistration) *informerRegistration[T] {
 	return &informerRegistration[T]{
 		parent: parent,
 		reg:    reg,
