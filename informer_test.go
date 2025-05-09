@@ -1,7 +1,6 @@
 package krtlite_test
 
 import (
-	"bytes"
 	"context"
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
@@ -11,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	typedfake "k8s.io/client-go/kubernetes/fake"
@@ -161,7 +159,7 @@ func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOp
 	dynamicColl := krtlite.NewDynamicInformer(d.client, d.gvr)
 	return krtlite.Map(dynamicColl, func(ktx krtlite.Context, u *unstructured.Unstructured) **corev1.ConfigMap {
 		res := &corev1.ConfigMap{}
-		err := fromUnstructured(u, res)
+		err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, res)
 		if err != nil {
 			panic(err)
 		}
@@ -169,45 +167,19 @@ func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOp
 	})
 }
 
-func toUnstructured[T runtime.Object](t T) (*unstructured.Unstructured, error) {
-	codec := scheme.Codecs.LegacyCodec(schema.GroupVersion{Group: corev1.GroupName, Version: "v1"})
-
-	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-
-	if err := codec.Encode(t, buf); err != nil {
-		return nil, err
-	}
-
-	u := &unstructured.Unstructured{}
-
-	err := json.Unmarshal(buf.Bytes(), &u)
-	return u, err
-}
-
-func fromUnstructured(u *unstructured.Unstructured, obj runtime.Object) error {
-	tmp, err := json.Marshal(u)
-	if err != nil {
-		return err
-	}
-
-	codec := scheme.Codecs.LegacyCodec(schema.GroupVersion{Group: corev1.GroupName, Version: "v1"})
-	_, _, err = codec.Decode(tmp, nil, obj)
-	return err
-}
-
 func (d dynamicRig) doUnstructured(ctx context.Context, t *corev1.ConfigMap, doIt func(ctx context.Context, t *unstructured.Unstructured) (*unstructured.Unstructured, error)) (*corev1.ConfigMap, error) {
-	u, err := toUnstructured(t)
+	u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(t)
 	if err != nil {
 		return nil, err
 	}
 
-	uPtr, err := doIt(ctx, u)
+	uPtr, err := doIt(ctx, &unstructured.Unstructured{Object: u})
 	if err != nil {
 		return nil, err
 	}
 
 	var res corev1.ConfigMap
-	err = fromUnstructured(uPtr, &res)
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(uPtr.UnstructuredContent(), &res)
 	return &res, err
 }
 

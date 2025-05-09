@@ -13,7 +13,7 @@ import (
 )
 
 // Context is used to track dependencies between collections created via [FlatMap] and [Map], and collections accessed
-// via [Fetch]. See [Fetch] for details.
+// via [Fetch]. See [Fetch] for details. By convention it is spelled `ktx` to distinguish it from a [context.Context].
 type Context interface {
 	// registerDependency registers the provided dependency and syncer with the parent collection. Returns the dependency
 	// ID for the registered collection.
