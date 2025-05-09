@@ -38,7 +38,7 @@ test: ## Runs go test.
 
 .PHONY: test-ci
 test-ci: ## Runs go test 10 times
-	@CGO_ENABLED=1 GOTRACEBACK=all go test -coverprofile=cover.out -failfast -count 10 -race -shuffle on -v ./...
+	@CGO_ENABLED=1 GOTRACEBACK=all go test -coverprofile=cover.out -count 10 -race -shuffle on -v ./...
 
 .PHONY: test-isolate-leak
 test-isolate-leak: ## Runs each test individually to detect leak failures.

@@ -13,13 +13,28 @@ import (
 )
 
 // Context is used to track dependencies between collections created via [FlatMap] and [Map], and collections accessed
-// via [Fetch]. See [Fetch] for details.
+// via [Fetch]. See [Fetch] for details. By convention it is spelled `ktx` to distinguish it from a [context.Context].
 type Context interface {
 	// registerDependency registers the provided dependency and syncer with the parent collection. Returns the dependency
 	// ID for the registered collection.
 	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer) bool
 	trackKeys(keys []string)
 	resetTrackingForCollection(collID uint64)
+}
+
+// FetchOne fetches a single item from another collection by key, tracking it as a dependency.
+//
+// Passing [MatchKeys] to FetchOne will panic.
+func FetchOne[T any](ktx Context, c Collection[T], key string, opts ...FetchOption) *T {
+	opts = append(opts, MatchKeys(key))
+	out := Fetch(ktx, c, opts...)
+	if len(out) > 1 {
+		panic("MatchKeys was passed to an invocation of FetchOne")
+	}
+	if len(out) == 1 {
+		return &out[0]
+	}
+	return nil
 }
 
 // Fetch calls List on the provided Collection, and can be used to subscribe Collections created by [Map] or [FlatMap]
