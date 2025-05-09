@@ -197,7 +197,6 @@ func (t *tracker[T]) Empty() {
 func (t *tracker[T]) Wait(events ...string) {
 	t.t.Helper()
 	assert.Eventually(t.t, func() bool {
-		slog.Info("events seen", "events", t.events)
 		t.mut.Lock()
 		defer t.mut.Unlock()
 		for _, ev := range events {

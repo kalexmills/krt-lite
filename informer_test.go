@@ -39,6 +39,8 @@ func TestInformer(t *testing.T) {
 		tt := NewTracker[*corev1.ConfigMap](t)
 		ConfigMaps.Register(tt.Track)
 
+		ConfigMaps.WaitUntilSynced(ctx.Done())
+
 		assert.Empty(t, ConfigMaps.List())
 
 		cmA := &corev1.ConfigMap{
@@ -156,7 +158,7 @@ type dynamicRig struct {
 }
 
 func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOption) krtlite.Collection[*corev1.ConfigMap] {
-	dynamicColl := krtlite.NewDynamicInformer(d.client, d.gvr)
+	dynamicColl := krtlite.NewDynamicInformer(d.client, d.gvr, opts...)
 	return krtlite.Map(dynamicColl, func(ktx krtlite.Context, u *unstructured.Unstructured) **corev1.ConfigMap {
 		res := &corev1.ConfigMap{}
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, res)
@@ -164,7 +166,7 @@ func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOp
 			panic(err)
 		}
 		return &res
-	})
+	}, opts...)
 }
 
 func (d dynamicRig) doUnstructured(ctx context.Context, t *corev1.ConfigMap, doIt func(ctx context.Context, t *unstructured.Unstructured) (*unstructured.Unstructured, error)) (*corev1.ConfigMap, error) {
