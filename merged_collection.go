@@ -6,7 +6,7 @@ func MergeDisjoint[T any](cs []Collection[T], opts ...CollectionOption) Collecti
 	return newMergedCollection(cs, opts)
 }
 
-// MergeIndexableDisjoint is identical to MergeDisjoint, except it creates an IndexableCollection.
+// MergeIndexableDisjoint merges two IndexableCollections. The result is also Indexable.
 func MergeIndexableDisjoint[T any](cs []IndexableCollection[T], opts ...CollectionOption) IndexableCollection[T] {
 	castCs := make([]Collection[T], 0, len(cs))
 	for _, c := range cs {
