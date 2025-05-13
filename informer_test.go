@@ -172,7 +172,7 @@ func (d dynamicRig) Collection(ctx context.Context, opts ...krtlite.CollectionOp
 func (d dynamicRig) doUnstructured(ctx context.Context, t *corev1.ConfigMap, doIt func(ctx context.Context, t *unstructured.Unstructured) (*unstructured.Unstructured, error)) (*corev1.ConfigMap, error) {
 	u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(t)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck
 	}
 
 	uPtr, err := doIt(ctx, &unstructured.Unstructured{Object: u})
@@ -182,7 +182,7 @@ func (d dynamicRig) doUnstructured(ctx context.Context, t *corev1.ConfigMap, doI
 
 	var res corev1.ConfigMap
 	err = runtime.DefaultUnstructuredConverter.FromUnstructured(uPtr.UnstructuredContent(), &res)
-	return &res, err
+	return &res, err //nolint:wrapcheck
 }
 
 func (d dynamicRig) Create(ctx context.Context, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
@@ -198,7 +198,7 @@ func (d dynamicRig) Update(ctx context.Context, cm *corev1.ConfigMap) (*corev1.C
 }
 
 func (d dynamicRig) Delete(ctx context.Context, cm *corev1.ConfigMap) error {
-	return d.client.Resource(d.gvr).Namespace(cm.Namespace).Delete(ctx, cm.Name, metav1.DeleteOptions{})
+	return d.client.Resource(d.gvr).Namespace(cm.Namespace).Delete(ctx, cm.Name, metav1.DeleteOptions{}) //nolint:wrapcheck
 }
 
 func TestInformerFilters(t *testing.T) {
