@@ -15,15 +15,18 @@ func (j Joined[L, R]) Key() string {
 type JoinType string
 
 const (
-	LeftJoin  JoinType = "left"
+	// LeftJoin ensures all entries from the left collection are present, even if no matching right entries exist.
+	LeftJoin JoinType = "left"
+	// RightJoin ensures all entries from the right collection are present, even if no matching left entries exist.
 	RightJoin JoinType = "right"
+	// InnerJoin ensures all entries have non-nil Left and Right entries.
 	InnerJoin JoinType = "inner"
 )
 
 // Join is used to join two collections which share a key space. Items which share a key are combined into a single
 // Joined entry in the result.
 //
-// JoinType TODO: finish documenting
+// JoinType is used to control how non-matching entries are handled.
 func Join[L, R any](left Collection[L], right Collection[R], joinType JoinType, opts ...CollectionOption) Collection[Joined[L, R]] {
 	switch joinType {
 	case LeftJoin:

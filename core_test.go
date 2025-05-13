@@ -1,6 +1,7 @@
-package krtlite
+package krtlite_test
 
 import (
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +49,7 @@ func TestGetKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.NotPanics(t, func() {
-				actual := GetKey(tt.arg)
+				actual := krtlite.GetKey(tt.arg)
 				assert.Equal(t, tt.expected, actual)
 			})
 		})
