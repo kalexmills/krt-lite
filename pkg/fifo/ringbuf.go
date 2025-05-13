@@ -113,7 +113,7 @@ func (q *ringbuf[V]) Get(i int) V {
 		i += q.count
 	}
 	if i < 0 || i >= q.count {
-		panic("ringbuf: Get() called with index out of range")
+		panic("ringbuf: Get() called with index ready of range")
 	}
 	// bitwise modulus
 	return *(q.buf[(q.head+i)&(len(q.buf)-1)])

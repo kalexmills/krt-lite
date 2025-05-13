@@ -15,18 +15,17 @@ func NewQueue[T any](size int) *Queue[T] {
 		in:  make(chan T),
 		out: make(chan T),
 
-		// newRingBuf is not thread-safe -- this is fine, because we only use it from a single goroutine.
+		// newRingBuf is not thread-safe. we only use it from a single goroutine, so this is fine.
 		queue:   newRingBuf[T](size),
 		running: false,
 	}
 }
 
-// Run starts this queue and returns. If the queue has already started, calling Run is a no-op.
+// Run starts this Queue and returns. If the queue has already started, calling Run is a no-op.
 func (q *Queue[T]) Run(stop <-chan struct{}) {
 	if q.running {
 		return
 	}
-	var zero T
 
 	q.running = true
 	go func() {
@@ -37,6 +36,7 @@ func (q *Queue[T]) Run(stop <-chan struct{}) {
 			return q.out
 		}
 		curVal := func() T {
+			var zero T
 			if q.queue.Len() == 0 {
 				return zero
 			}
@@ -58,7 +58,6 @@ func (q *Queue[T]) Run(stop <-chan struct{}) {
 				q.queue.Remove()
 			}
 		}
-		q.running = false
 		close(q.out)
 	}()
 }
