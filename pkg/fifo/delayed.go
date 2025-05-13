@@ -60,8 +60,9 @@ func (d *DelayedQueue[T]) Run(stop <-chan struct{}) {
 
 			case <-d.timer.C:
 				for next := d.waiting.NextTime(); next != nil && atOrBefore(*next, time.Now()); next = d.waiting.NextTime() {
-					item := heap.Pop(d.waiting)
-					d.ready.In() <- item.(*entry[T]).val
+					val := heap.Pop(d.waiting).(*entry[T]).val
+					fmt.Println("sent value", val)
+					d.ready.In() <- val
 				}
 
 				if d.waiting.Len() == 0 {
@@ -85,6 +86,13 @@ func (d *DelayedQueue[T]) Run(stop <-chan struct{}) {
 						return
 					}
 					fmt.Println("input channel closed; items still remaining:", d.waiting.Len())
+					continue
+				}
+
+				// send item immediately if it is already at or past its deadline
+				if atOrBefore(nextEntry.at, time.Now()) {
+					fmt.Println("sending value immediately", nextEntry.val)
+					d.ready.In() <- nextEntry.val
 					continue
 				}
 

@@ -50,8 +50,10 @@ func testDelay(t *testing.T, inDelay, outDelay time.Duration) {
 
 	for i := 0; i < 100; i++ {
 		q.Send(i, inDelay)
+		time.Sleep(inDelay)
 	}
 	q.Close()
+
 	wg.Wait()
 
 	if lastVal != 99 {

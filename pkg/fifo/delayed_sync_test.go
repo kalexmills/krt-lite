@@ -7,18 +7,19 @@ import (
 	"github.com/kalexmills/krt-lite/pkg/fifo"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 )
 
 func TestDelayedQueue_DelaysProperly(t *testing.T) {
-	// This test uses the syntest experimental Go library. See https://go.dev/blog/synctest for more about working with
+	// This test uses the synctest experimental module. See https://go.dev/blog/synctest for more about working with
 	// synctest.
 	synctest.Run(func() {
 		ctx, cancel := context.WithCancel(t.Context())
 
-		cint := new(catcher[int])
+		cint := newCatcher[int]()
 
 		q := fifo.NewDelayedQueue[int](16)
 		q.Run(t.Context().Done())
@@ -51,6 +52,13 @@ func TestDelayedQueue_DelaysProperly(t *testing.T) {
 
 type catcher[T any] struct {
 	caught *T
+	mut    *sync.Mutex
+}
+
+func newCatcher[T any]() *catcher[T] {
+	return &catcher[T]{
+		mut: &sync.Mutex{},
+	}
 }
 
 func (c *catcher[T]) Run(ctx context.Context, ch <-chan T) {
@@ -62,12 +70,16 @@ func (c *catcher[T]) Run(ctx context.Context, ch <-chan T) {
 			if !ok {
 				return
 			}
+			c.mut.Lock()
 			c.caught = &val
+			c.mut.Unlock()
 		}
 	}
 }
 
 func (c *catcher[T]) Seen() *T {
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	if c.caught == nil {
 		return nil
 	}
