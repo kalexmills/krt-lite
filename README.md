@@ -5,7 +5,7 @@
 
 # krt-lite
 
-istio/krt, without Istio.
+[istio/krt](https://github.com/istio/istio/blob/master/pkg/kube/krt/README.md), without Istio.
 
 ## Why KRT?
 
