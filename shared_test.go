@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -210,7 +211,8 @@ func (t *tracker[T]) Wait(events ...string) {
 			delete(t.events, ev)
 		}
 		return true
-	}, timeout, pollInterval, "expected events: %v", events)
+	}, timeout, pollInterval, "expected events: %v;\ngot: %v", events,
+		slices.Collect(maps.Keys(t.events)))
 }
 
 type LabeledNamed struct {
