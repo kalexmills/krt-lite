@@ -69,7 +69,7 @@ func KrtController(b *testing.B, events chan string) (Client, func()) {
 		}
 	})
 	Workloads.Register(func(e krt.Event[Workload]) {
-		events <- fmt.Sprintf(e.Latest().Name, e.Event)
+		events <- fmt.Sprintf("%s/%s", e.Latest().Name, e.Event)
 	})
 	wrapped := &krtClientWrapper{
 		pods: clienttest.NewWriter[*corev1.Pod](b, c),
@@ -129,7 +129,11 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
+	b.Log("started krtlite")
 	return &krtliteWrapper{client: c}, func() {
+		Pods.WaitUntilSynced(ctx.Done())
+		Services.WaitUntilSynced(ctx.Done())
+		Workloads.WaitUntilSynced(ctx.Done())
 		reg.WaitUntilSynced(ctx.Done())
 	}
 }
@@ -143,9 +147,11 @@ func BenchmarkController(b *testing.B) {
 		slogLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 		defer slog.SetLogLoggerLevel(slogLevel)
 
+		stepSize := 1000
+
 		b.Logf("starting controller")
 		var initialPods []*corev1.Pod
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < stepSize; i++ {
 			initialPods = append(initialPods, &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("pod-%d", i),
@@ -179,20 +185,29 @@ func BenchmarkController(b *testing.B) {
 		}
 
 		ctx := b.Context()
-		events := make(chan string, 1000)
+		events := make(chan string, stepSize)
 
 		c, wait := fn(b, events)
-		for _, pod := range initialPods {
-			c.CreatePod(ctx, pod)
-		}
+
 		for _, s := range initialServices {
 			c.CreateService(ctx, s)
 		}
+		for _, pod := range initialPods {
+			c.CreatePod(ctx, pod)
+		}
 
+		// TODO: remove logs
+		b.Log("waiting")
 		wait()
+		b.Log("done waiting")
 		b.ResetTimer()
+
+		b.Log("draining sync events")
+		drainN(events, len(initialPods))
+		b.Logf("done draining sync events, %d left in channel", len(events))
+
 		for n := 0; n < b.N; n++ {
-			for i := 0; i < 1000; i++ {
+			for i := 0; i < stepSize; i++ {
 				c.UpdatePod(ctx, &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      fmt.Sprintf("pod-%d", i),
@@ -210,7 +225,8 @@ func BenchmarkController(b *testing.B) {
 					},
 				})
 			}
-			drainN(events, 1000)
+			drainN(events, stepSize)
+			b.Logf("drained events, %d left in channel", len(events))
 		}
 	}
 

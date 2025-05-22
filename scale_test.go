@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	krtlite "github.com/kalexmills/krt-lite"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log/slog"
@@ -18,7 +19,7 @@ import (
 func TestDetectDroppedEvents(t *testing.T) {
 	const (
 		N       = 100
-		K       = 100 // K cannot be higher than watch.DefaultChanSize, which can't be set with the race detector enabled
+		K       = 100 // K cannot be higher than watch.DefaultChanSize, which cannot be set with the race detector enabled
 		timeout = 10 * time.Second
 	)
 
@@ -96,18 +97,38 @@ func TestDetectDroppedEvents(t *testing.T) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
-	reg.WaitUntilSynced(ctx.Done())
-
-	for _, pod := range initialPods {
-		_ = c.Create(ctx, pod)
-	}
-
+	sendCount := 0
 	for _, s := range initialServices {
 		_ = c.Create(ctx, s)
 	}
 
+	for _, pod := range initialPods {
+		_ = c.Create(ctx, pod)
+		sendCount++
+	}
+
+	reg.WaitUntilSynced(ctx.Done())
+
 	var lastEventSeen time.Time
-	count := 0
+	receiveCount := 0
+
+	// drain n events from the queue, if fewer than exactly n updates were sent, this will force a deadlock
+	drain := func(n int) {
+		for i := 0; i < n; i++ {
+			select {
+			case <-events:
+				receiveCount++
+				lastEventSeen = time.Now()
+			case <-ctx.Done():
+				// panic to force a stack trace. If you do not see one, run go test with GOTRACEBACK=all.
+				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d; last event seen %s ago",
+					timeout, receiveCount, sendCount, time.Since(lastEventSeen).String()))
+			}
+		}
+	}
+
+	drain(len(initialPods)) // TODO: fix
+
 	for n := 0; n < N; n++ {
 		for i := 0; i < K; i++ { // send K updates
 			_ = c.Update(ctx, &corev1.Pod{
@@ -126,18 +147,11 @@ func TestDetectDroppedEvents(t *testing.T) {
 					PodIP: GetIP(),
 				},
 			})
+			sendCount++
 		}
-		// drain K updates from the queue, if fewer than exactly 1000 updates were sent, this will force a deadlock
-		for i := 0; i < K; i++ {
-			select {
-			case <-events:
-				count++
-				lastEventSeen = time.Now()
-			case <-ctx.Done():
-				// panic to force a stack trace. If you do not see one, run go test with GOTRACEBACK=all.
-				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d; last event seen %T ago",
-					timeout, count, (n+1)*K, time.Since(lastEventSeen)))
-			}
-		}
+		drain(K)
 	}
+
+	assert.Len(t, events, 0)
+	assert.Equal(t, sendCount, receiveCount)
 }
