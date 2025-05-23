@@ -1,5 +1,7 @@
 package krtlite
 
+// Joined represents a joined value where Left and Right both share identical keys. Used in collections created using
+// Join.
 type Joined[L, R any] struct {
 	Type  JoinType
 	Left  *L
@@ -23,10 +25,18 @@ const (
 	InnerJoin JoinType = "inner"
 )
 
-// Join is used to join two collections which share a key space. Items which share a key are combined into a single
-// Joined entry in the result.
+// Join is used to join two collections -- named left and right -- which share a key space. Items which share a key are
+// combined into a single Joined entry in the resulting collection.
 //
-// JoinType is used to control how non-matching entries are handled.
+// JoinType is used to control how items without a match are handled. Left will always be non-nil for items in LeftJoin
+// collections, while Right will always be non-nil for items in RightJoin collections. Both Left and Right will be
+// non-nil for items in InnerJoin collections.
+//
+// A given Joined entry will always be updated anytime their corresponding items are updated upstream. The event type
+// reflected in the joined collection does not match the type of the upstream event in every case. LeftJoin collections
+// only receive Add and Delete events for their Left entries; Add and Delete events for their Right entries are
+// reflected as Updates. The symmetric statement is true for RightJoin collections. InnerJoin collections act like
+// LeftJoin collections in this respect.
 func Join[L, R any](left Collection[L], right Collection[R], joinType JoinType, opts ...CollectionOption) Collection[Joined[L, R]] {
 	switch joinType {
 	case LeftJoin:
@@ -70,6 +80,7 @@ func Join[L, R any](left Collection[L], right Collection[R], joinType JoinType, 
 				Right: r,
 			}
 		})
+
 	default:
 		panic("unsupported join type: " + joinType)
 	}
