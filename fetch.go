@@ -404,6 +404,7 @@ func ExtractPodSelector(obj any) labels.Selector {
 
 	case *batchv1.Job:
 		lblSelector = typed.Spec.Selector
+
 	case *batchv1.CronJob:
 		lblSelector = typed.Spec.JobTemplate.Spec.Selector
 

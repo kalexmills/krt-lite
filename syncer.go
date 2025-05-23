@@ -97,7 +97,7 @@ func (s channelSyncer) HasSynced() bool {
 }
 
 // pollingSyncer is used to provide us more control over poll intervals than we get from the cache package.
-// Only intended for use when an upstream package forces a particular poll interval upon us.
+// Only intended for use when an upstream package forces us to poll.
 type pollingSyncer struct {
 	interval  time.Duration
 	hasSynced func() bool
@@ -108,20 +108,16 @@ func (s *pollingSyncer) WaitUntilSynced(stop <-chan struct{}) bool {
 	defer cancel()
 
 	go func() { // convert the stop channel into context cancellation.
-		select {
-		case <-stop:
-			cancel()
-		case <-ctx.Done():
-			return
-		}
+		<-stop
+		cancel()
 	}()
 
 	err := wait.PollUntilContextCancel(ctx, s.interval, true,
 		func(ctx context.Context) (done bool, err error) {
-			if !s.hasSynced() {
-				return false, nil
+			if s.hasSynced() {
+				return true, nil
 			}
-			return true, nil
+			return false, nil
 		},
 	)
 	return err == nil

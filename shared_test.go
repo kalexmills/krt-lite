@@ -204,7 +204,6 @@ func (t *tracker[T]) Wait(events ...string) {
 				return false
 			}
 		}
-
 		// consume events once all have been verified
 		for _, ev := range events {
 			delete(t.events, ev)

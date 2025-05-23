@@ -11,6 +11,7 @@ import (
 func TestFetchOptions(t *testing.T) {
 	ctx := t.Context()
 
+	// convenient constructors for LabeledNamed
 	keepLabels := map[string]string{"keep": "true"}
 	rejectLabels := map[string]string{"keep": "false"}
 	keep := func(ns, name string) LabeledNamed {
@@ -90,4 +91,25 @@ func TestFetchOptions(t *testing.T) {
 	}
 	t.Run("MatchSelectsLabels", serviceTest(krtlite.MatchSelectsLabels(keepLabels, krtlite.ExtractPodSelector)))
 	t.Run("MatchNames", serviceTest(krtlite.MatchNames("ns/a", "ns/d")))
+
+	t.Run("MatchIndex", func(t *testing.T) {
+		Names := krtlite.NewStaticCollection[LabeledNamed](nil, []LabeledNamed{
+			keep("ns", "a"),
+			reject("ns", "b"),
+			reject("ns", "c"),
+			keep("ns", "d"),
+			reject("ns", "e"),
+		}, krtlite.WithName("Names"), krtlite.WithContext(ctx))
+
+		idx := Names.Index(func(t LabeledNamed) []string {
+			return []string{t.Labels["keep"]}
+		})
+
+		Filtered := krtlite.FlatMap(Source, func(ktx krtlite.Context, n Named) []LabeledNamed {
+			return krtlite.Fetch(ktx, Names, krtlite.MatchIndex(idx, "true"))
+		}, krtlite.WithName("Filtered"), krtlite.WithContext(ctx))
+
+		Filtered.WaitUntilSynced(ctx.Done())
+		AssertEventuallyKeysMatch(t, Filtered, "ns/a", "ns/d")
+	})
 }

@@ -125,15 +125,12 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		return result
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
 
-	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
-		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
-	})
-
 	b.Log("started krtlite")
 	return &krtliteWrapper{client: c}, func() {
-		Pods.WaitUntilSynced(ctx.Done())
-		Services.WaitUntilSynced(ctx.Done())
 		Workloads.WaitUntilSynced(ctx.Done())
+		reg := Workloads.Register(func(e krtlite.Event[Workload]) {
+			events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
+		})
 		reg.WaitUntilSynced(ctx.Done())
 	}
 }
@@ -202,9 +199,7 @@ func BenchmarkController(b *testing.B) {
 		b.Log("done waiting")
 		b.ResetTimer()
 
-		b.Log("draining sync events")
 		drainN(events, len(initialPods))
-		b.Logf("done draining sync events, %d left in channel", len(events))
 
 		for n := 0; n < b.N; n++ {
 			for i := 0; i < stepSize; i++ {

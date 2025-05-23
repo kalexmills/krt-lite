@@ -93,11 +93,14 @@ func TestDetectDroppedEvents(t *testing.T) {
 		return result
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates(), krtlite.WithContext(ctx))
 
+	sendCount := 0
+
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
-	sendCount := 0
+	reg.WaitUntilSynced(ctx.Done())
+
 	for _, s := range initialServices {
 		_ = c.Create(ctx, s)
 	}
@@ -106,8 +109,6 @@ func TestDetectDroppedEvents(t *testing.T) {
 		_ = c.Create(ctx, pod)
 		sendCount++
 	}
-
-	reg.WaitUntilSynced(ctx.Done())
 
 	var lastEventSeen time.Time
 	receiveCount := 0
@@ -127,7 +128,7 @@ func TestDetectDroppedEvents(t *testing.T) {
 		}
 	}
 
-	drain(len(initialPods)) // TODO: fix
+	drain(len(initialPods))
 
 	for n := 0; n < N; n++ {
 		for i := 0; i < K; i++ { // send K updates
