@@ -1,4 +1,4 @@
-# Introduction
+# Contribution Guide
 
 Thank you for considering contributing! We'd love to get your help.
 
