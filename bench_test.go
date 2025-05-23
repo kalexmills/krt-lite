@@ -125,7 +125,6 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		return result
 	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
 
-	b.Log("started krtlite")
 	return &krtliteWrapper{client: c}, func() {
 		Workloads.WaitUntilSynced(ctx.Done())
 		reg := Workloads.Register(func(e krtlite.Event[Workload]) {
@@ -135,6 +134,8 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 	}
 }
 
+// NOTE: Results of this benchmark aren't valid -- the difference in the fake clients used by krt and krtlite creates
+// enough of a performance disparity to invalidate the benchmark.
 func BenchmarkController(b *testing.B) {
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 	defer slog.SetLogLoggerLevel(oldLevel)
@@ -186,18 +187,15 @@ func BenchmarkController(b *testing.B) {
 
 		c, wait := fn(b, events)
 
+		wait()
+		b.ResetTimer()
+
 		for _, s := range initialServices {
 			c.CreateService(ctx, s)
 		}
 		for _, pod := range initialPods {
 			c.CreatePod(ctx, pod)
 		}
-
-		// TODO: remove logs
-		b.Log("waiting")
-		wait()
-		b.Log("done waiting")
-		b.ResetTimer()
 
 		drainN(events, len(initialPods))
 
@@ -221,7 +219,6 @@ func BenchmarkController(b *testing.B) {
 				})
 			}
 			drainN(events, stepSize)
-			b.Logf("drained events, %d left in channel", len(events))
 		}
 	}
 
