@@ -228,6 +228,7 @@ func (c *derivedCollection[I, O]) run() {
 		close(c.syncedCh)
 		c.logger().Debug("collection has synced", "parentName", c.parent.getName())
 	})
+
 	c.processTaskQueue()
 }
 
@@ -355,6 +356,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSync bool) {
 	// update indexes before handlers, so handlers can rely on indexes being computed.
 	c.idxMut.RLock()
+
 	for _, idx := range c.indices {
 		idx.handleEvents(events)
 	}
@@ -362,12 +364,14 @@ func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSyn
 
 	c.regHandlerMut.RLock()
 	defer c.regHandlerMut.RUnlock()
+
 	for _, h := range c.registeredHandlers {
 		h.send(events, initialSync)
 	}
 }
 
 func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, events []Event[any]) {
+
 	changedKeys := c.changedKeys(dependency, events)
 	if len(changedKeys) == 0 {
 		return
@@ -582,7 +586,8 @@ func (p *registrationHandler[T]) send(os []Event[T], isInInitialList bool) {
 
 	// signal that we've received all initial events
 	select {
-	case <-p.syncedCh: // if syncedCh is closed then we're synced -- there's nothing else to do.
+	// if we're already synced, don't send the 'synced' message twice
+	case <-p.syncedCh:
 		return
 	default:
 		select {

@@ -2,12 +2,15 @@ package krtlite_test
 
 import (
 	"context"
+	"fmt"
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	ctrlfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"slices"
 	"testing"
 )
@@ -487,4 +490,53 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	err = cmClient.Delete(ctx, "foo1", metav1.DeleteOptions{})
 	require.NoError(t, err)
 	assertEventuallyLabelsEqual()
+}
+
+func TestEventsBetweenRegisterAndSync(t *testing.T) {
+	ctx := t.Context()
+
+	client := ctrlfake.NewFakeClient()
+
+	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, client,
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
+
+	ByNamespace := krtlite.NewNamespaceIndex(Pods)
+
+	Source := krtlite.NewSingleton[Named](&Named{}, true,
+		krtlite.WithName("Source"), krtlite.WithContext(ctx))
+
+	// so it's a bit contrived but...
+	mapped := krtlite.FlatMap[Named, *corev1.Pod](Source, func(ktx krtlite.Context, _ Named) []*corev1.Pod {
+		fetched := krtlite.Fetch(ktx, Pods, krtlite.MatchIndex(ByNamespace, "ns-0"))
+		return fetched
+	}, krtlite.WithContext(ctx))
+
+	tt := NewTracker[*corev1.Pod](t)
+
+	reg := mapped.Register(tt.Track)
+
+	var pods []runtime.Object
+	for i := 0; i < 100; i++ {
+		pods = append(pods, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("pod-%d", i),
+				Namespace: fmt.Sprintf("ns-%d", i%2),
+				Labels: map[string]string{
+					"app": fmt.Sprintf("app-%d", i%25),
+				},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				PodIP: GetIP(),
+			},
+		})
+	}
+	reg.WaitUntilSynced(ctx.Done())
+
+	var events []string
+	for i := 0; i < 50; i++ {
+		events = append(events, fmt.Sprintf("add/ns-0/pod-%d", 2*i))
+	}
+
+	tt.Wait(events...)
 }
