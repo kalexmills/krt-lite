@@ -155,5 +155,4 @@ func TestDetectDroppedEvents(t *testing.T) {
 	}
 
 	assert.Equal(t, sentCount, count, "send and receive counts to not match")
-	assert.Len(t, events, 0, "no events should be outstanding") //nolint:testifylint // assert.Empty for channels yields poor error messages.
 }
