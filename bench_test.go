@@ -141,7 +141,7 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 // NOTE: Results of this benchmark aren't valid -- the difference in the fake clients used by krt and krtlite creates
 // enough of a performance disparity to invalidate the benchmark.
 func BenchmarkController(b *testing.B) {
-	b.Skip("Benchmark results are invalid -- skipping")
+	b.Skip("Benchmark results are invalid -- skipping\nsee: https://github.com/kalexmills/krt-lite/issues/34")
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 	defer slog.SetLogLoggerLevel(oldLevel)
 	watch.DefaultChanSize = 100_000
