@@ -488,3 +488,7 @@ func TestDerivedCollectionMultipleFetch(t *testing.T) {
 	require.NoError(t, err)
 	assertEventuallyLabelsEqual()
 }
+
+func TestDerivedCollectionSync(t *testing.T) {
+
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	krtlite "github.com/kalexmills/krt-lite"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log/slog"
@@ -18,7 +19,7 @@ import (
 func TestDetectDroppedEvents(t *testing.T) {
 	const (
 		N       = 100
-		K       = 100 // K cannot be higher than watch.DefaultChanSize, which can't be set with the race detector enabled
+		K       = 50 // K cannot be higher than watch.DefaultChanSize, which can't be set with the race detector enabled
 		timeout = 10 * time.Second
 	)
 
@@ -85,32 +86,53 @@ func TestDetectDroppedEvents(t *testing.T) {
 			Named: NewNamed(p),
 			IP:    p.Status.PodIP,
 		}
-
 		for _, service := range services {
 			result.ServiceNames = append(result.ServiceNames, service.Name)
 		}
 		return result
-	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates(), krtlite.WithContext(ctx))
+	}, krtlite.WithName("Workloads"), krtlite.WithContext(ctx))
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
 	})
 
+	sentCount := 0
+
 	reg.WaitUntilSynced(ctx.Done())
 
 	for _, pod := range initialPods {
 		_ = c.Create(ctx, pod)
+		sentCount++
 	}
 
 	for _, s := range initialServices {
 		_ = c.Create(ctx, s)
+
 	}
 
 	var lastEventSeen time.Time
 	count := 0
+
+	drain := func() {
+		// drain K updates from the queue, if fewer than exactly K updates were sent, this will force a deadlock
+		for i := 0; i < K; i++ {
+			select {
+			case <-events:
+				count++
+				lastEventSeen = time.Now()
+			case <-ctx.Done():
+				// panic to force a stack trace. If you do not see one, run go test with GOTRACEBACK=all.
+				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d; last event seen %s ago",
+					timeout, count, sentCount, time.Since(lastEventSeen).String()))
+			}
+		}
+	}
+
+	drain()
+
 	for n := 0; n < N; n++ {
 		for i := 0; i < K; i++ { // send K updates
-			_ = c.Update(ctx, &corev1.Pod{
+			p := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("pod-%d", i),
 					Namespace: fmt.Sprintf("ns-%d", i%2),
@@ -125,19 +147,14 @@ func TestDetectDroppedEvents(t *testing.T) {
 					Phase: corev1.PodRunning,
 					PodIP: GetIP(),
 				},
-			})
-		}
-		// drain K updates from the queue, if fewer than exactly 1000 updates were sent, this will force a deadlock
-		for i := 0; i < K; i++ {
-			select {
-			case <-events:
-				count++
-				lastEventSeen = time.Now()
-			case <-ctx.Done():
-				// panic to force a stack trace. If you do not see one, run go test with GOTRACEBACK=all.
-				panic(fmt.Sprintf("system deadlocked after %s: received %d events; sent %d; last event seen %T ago",
-					timeout, count, (n+1)*K, time.Since(lastEventSeen)))
 			}
+			_ = c.Status().Update(ctx, p.DeepCopy()) // deepCopy to prevent client from overwriting fields
+			_ = c.Update(ctx, p)
+			sentCount++
 		}
+		drain()
 	}
+
+	assert.Equal(t, sentCount, count, "send and receive counts to not match")
+	assert.Len(t, events, 0, "no events should be outstanding")
 }

@@ -326,7 +326,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 
 				ev := Event[O]{}
 				if newOK && oldOK {
-					if !c.wantSpuriousUpdates && reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection if possible
+					if !c.wantSpuriousUpdates && reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection using Equaler
 						continue
 					}
 					ev.Type = EventUpdate
