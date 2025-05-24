@@ -41,6 +41,7 @@ func (c *krtClientWrapper) CreateService(ctx context.Context, svc *corev1.Servic
 
 func (c *krtClientWrapper) UpdatePod(ctx context.Context, pod *corev1.Pod) {
 	c.pods.Update(pod)
+	c.pods.UpdateStatus(pod)
 }
 
 type ServiceWrapper struct{ *corev1.Service }
@@ -94,7 +95,10 @@ func (k *krtliteWrapper) CreateService(ctx context.Context, svc *corev1.Service)
 }
 
 func (k *krtliteWrapper) UpdatePod(ctx context.Context, pod *corev1.Pod) {
+	podIP := pod.Status.PodIP // save the PodIP so it isn't overwritten by Update
 	_ = k.client.Update(ctx, pod)
+	pod.Status.PodIP = podIP
+	_ = k.client.Status().Update(ctx, pod)
 }
 
 func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
@@ -123,7 +127,7 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 			}
 		}
 		return result
-	}, krtlite.WithName("Workloads"), krtlite.WithSpuriousUpdates())
+	}, krtlite.WithName("Workloads"))
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
@@ -134,7 +138,10 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 	}
 }
 
+// NOTE: Results of this benchmark aren't valid -- the difference in the fake clients used by krt and krtlite creates
+// enough of a performance disparity to invalidate the benchmark.
 func BenchmarkController(b *testing.B) {
+	b.Skip("Benchmark results are invalid -- skipping\nsee: https://github.com/kalexmills/krt-lite/issues/34")
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 	defer slog.SetLogLoggerLevel(oldLevel)
 	watch.DefaultChanSize = 100_000
