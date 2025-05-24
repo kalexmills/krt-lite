@@ -41,7 +41,6 @@ func (c *krtClientWrapper) CreateService(ctx context.Context, svc *corev1.Servic
 
 func (c *krtClientWrapper) UpdatePod(ctx context.Context, pod *corev1.Pod) {
 	c.pods.Update(pod)
-	//pod.Status.PodIP = ip
 	c.pods.UpdateStatus(pod)
 }
 

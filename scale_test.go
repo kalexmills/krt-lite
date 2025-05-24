@@ -107,7 +107,6 @@ func TestDetectDroppedEvents(t *testing.T) {
 
 	for _, s := range initialServices {
 		_ = c.Create(ctx, s)
-
 	}
 
 	var lastEventSeen time.Time
@@ -156,5 +155,5 @@ func TestDetectDroppedEvents(t *testing.T) {
 	}
 
 	assert.Equal(t, sentCount, count, "send and receive counts to not match")
-	assert.Len(t, events, 0, "no events should be outstanding")
+	assert.Len(t, events, 0, "no events should be outstanding") //nolint:testifylint // assert.Empty for channels yields poor error messages.
 }
