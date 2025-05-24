@@ -338,7 +338,6 @@ func (ktx *kontext[I, O]) registerDependency(d *dependency, syn Syncer, register
 		ktx.collection.collectionDependencies[d.collectionID] = struct{}{}
 
 		register(func(anys []Event[any]) { // register and wait for sync
-			l.Debug("pushing fetch events", "count", len(anys))
 			ktx.collection.pushFetchEvents(d, anys)
 		}).WaitUntilSynced(ktx.collection.stop)
 
