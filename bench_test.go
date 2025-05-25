@@ -115,7 +115,10 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 		}
 
 		services := krtlite.Fetch(ktx, Services, krtlite.MatchIndex(ServicesByNamespace, p.Namespace),
-			krtlite.MatchSelectsLabels(p.Labels, krtlite.ExtractPodSelector))
+			krtlite.MatchSelectsLabels(p.Labels, func(obj any) labels.Set {
+				svc := obj.(*corev1.Service)
+				return svc.Spec.Selector
+			}))
 		result := &Workload{
 			Named: NewNamed(p),
 			IP:    p.Status.PodIP,
@@ -141,7 +144,6 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 // NOTE: Results of this benchmark aren't valid -- the difference in the fake clients used by krt and krtlite creates
 // enough of a performance disparity to invalidate the benchmark.
 func BenchmarkController(b *testing.B) {
-	b.Skip("Benchmark results are invalid -- skipping\nsee: https://github.com/kalexmills/krt-lite/issues/34")
 	oldLevel := slog.SetLogLoggerLevel(slog.LevelWarn)
 	defer slog.SetLogLoggerLevel(oldLevel)
 	watch.DefaultChanSize = 100_000
@@ -222,6 +224,8 @@ func BenchmarkController(b *testing.B) {
 	}
 
 	b.Run("krt", func(b *testing.B) {
+		b.Skip("Comparing krt + krt-lite using this benchmark is invalid -- skipping krt run\n" +
+			"see: https://github.com/kalexmills/krt-lite/issues/34 for details.")
 		benchmark(b, KrtController)
 	})
 	b.Run("krt-lite", func(b *testing.B) {

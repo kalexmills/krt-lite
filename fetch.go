@@ -5,7 +5,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
@@ -109,7 +108,7 @@ type dependency struct {
 
 	filterFunc              func(any) bool
 	filterKeys              map[string]struct{}
-	filterLabels            map[string]string
+	filterLabels            labels.Selector
 	filterSelectorExtractor SelectorExtractor
 	filterSelectorLabels    map[string]string
 	filterLabelSelector     labels.Selector
@@ -143,7 +142,7 @@ func (d *dependency) Matches(object any) bool {
 			panic("MatchLabels used on a collection whose contents do not implement the Labeler interface")
 		}
 		lbls := lblr.GetLabels()
-		if lbls == nil || !labels.SelectorFromSet(d.filterLabels).Matches(labels.Set(lbls)) {
+		if lbls == nil || !d.filterLabels.Matches(labels.Set(lbls)) {
 			return false
 		}
 	}
@@ -154,7 +153,7 @@ func (d *dependency) Matches(object any) bool {
 			return false
 		}
 
-		if !selector.Matches(labels.Set(d.filterSelectorLabels)) {
+		if !selectorMatches(selector, d.filterSelectorLabels) {
 			return false
 		}
 	}
@@ -169,6 +168,17 @@ func (d *dependency) Matches(object any) bool {
 		}
 	}
 
+	return true
+}
+
+func selectorMatches(selector, set labels.Set) bool {
+	for lbl, val := range selector {
+		if setVal, ok := set[lbl]; ok {
+			if val != "" && val != setVal {
+				return false
+			}
+		}
+	}
 	return true
 }
 
@@ -197,12 +207,12 @@ func MatchKeys(k ...string) FetchOption {
 // MatchLabels ensures [Fetch] only returns Kubernetes objects with a matching set of labels.
 //
 // Panics will occur in case multiple MatchLabels options are passed to the same invocation of [Fetch].
-func MatchLabels(labels map[string]string) FetchOption {
+func MatchLabels(lbls map[string]string) FetchOption {
 	return func(d *dependency) {
 		if d.filterLabels != nil {
 			panic("MatchLabels added twice to the same Fetch call.")
 		}
-		d.filterLabels = labels
+		d.filterLabels = labels.SelectorFromSet(lbls)
 	}
 }
 
@@ -371,48 +381,58 @@ func castEvent[I, O any](o Event[I]) Event[O] {
 	return e
 }
 
-// SelectorExtractor can extract a [labels.Selector] from objects in a collection. Intended for use with
+// SelectorExtractor can extract a [labels.Set] from selectors in a collection. Intended for use with
 // [MatchSelectsLabels].
-type SelectorExtractor func(any) labels.Selector
+type SelectorExtractor func(any) labels.Set
 
-// ExtractPodSelector knows how to retrieve pod label selectors from many common Kubernetes objects, and any
+// ExtractPodSelector knows how to retrieve MatchLabels pod selectors from many common Kubernetes objects, and any
 // LabelSelectorer. Panics if an unsupported object is used.
+//
+// Only MatchLabels selectors are supported.
 //
 // Can fetch pod label selectors from *[corev1.Service], *[appsv1.DaemonSet], *[appsv1.Deployment],
 // *[appsv1.ReplicaSet], *[appsv1.StatefulSet], *[batchv1.Job], and *[batchv1.CronJob].
-func ExtractPodSelector(obj any) labels.Selector {
-	var lblSelector *metav1.LabelSelector
+func ExtractPodSelector(obj any) labels.Set {
 	switch typed := obj.(type) {
 	case LabelSelectorer:
-		lblSelector = &metav1.LabelSelector{MatchLabels: typed.GetLabelSelector()}
+		return typed.GetLabelSelector()
 
 	case *corev1.Service:
-		lblSelector = &metav1.LabelSelector{MatchLabels: typed.Spec.Selector}
+		return typed.Spec.Selector
 
 	case *appsv1.DaemonSet:
-		lblSelector = typed.Spec.Selector
+		if typed.Spec.Selector != nil {
+			return typed.Spec.Selector.MatchLabels
+		}
 
 	case *appsv1.Deployment:
-		lblSelector = typed.Spec.Selector
+		if typed.Spec.Selector != nil {
+			return typed.Spec.Selector.MatchLabels
+		}
 
 	case *appsv1.ReplicaSet:
-		lblSelector = typed.Spec.Selector
+		if typed.Spec.Selector != nil {
+			return typed.Spec.Selector.MatchLabels
+		}
 
 	case *appsv1.StatefulSet:
-		lblSelector = typed.Spec.Selector
+		if typed.Spec.Selector != nil {
+			return typed.Spec.Selector.MatchLabels
+		}
 
 	case *batchv1.Job:
-		lblSelector = typed.Spec.Selector
+		if typed.Spec.Selector != nil {
+			return typed.Spec.Selector.MatchLabels
+		}
+
 	case *batchv1.CronJob:
-		lblSelector = typed.Spec.JobTemplate.Spec.Selector
+		if typed.Spec.JobTemplate.Spec.Selector != nil {
+			return typed.Spec.JobTemplate.Spec.Selector.MatchLabels
+		}
 
 	default:
-		panic(fmt.Sprintf("Could not fetch label selector for object of type %T", obj))
+		panic(fmt.Errorf("could not fetch label MachLabels selector for object of type %T", obj))
 	}
 
-	s, err := metav1.LabelSelectorAsSelector(lblSelector)
-	if err != nil {
-		return nil
-	}
-	return s
+	return nil
 }
