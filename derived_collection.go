@@ -225,7 +225,11 @@ func (c *derivedCollection[I, O]) run() {
 }
 
 func (c *derivedCollection[I, O]) submitTask(task task) {
-	c.taskQueue.In() <- task
+	select {
+	case <-c.stop:
+		return
+	case c.taskQueue.In() <- task:
+	}
 }
 
 func (c *derivedCollection[I, O]) pushFetchEvents(d *dependency, events []Event[any]) {
