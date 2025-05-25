@@ -55,15 +55,11 @@ type derivedCollection[I, O any] struct {
 
 	transformer FlatMapper[I, O]
 
-	mut      *sync.RWMutex // mut protects inputs, outputs, and mappings
-	inputs   map[key[I]]I
-	outputs  map[key[O]]O
-	mappings map[key[I]]map[key[O]]struct{}
-
-	idxMut  *sync.RWMutex // idxMut protects indices.
-	indices []*mapIndex[O]
-
-	regHandlerMut      *sync.RWMutex // regHandlerMut protects registeredHandlers.
+	mut                *sync.RWMutex // mut protects inputs, outputs, and mappings
+	inputs             map[key[I]]I
+	outputs            map[key[O]]O
+	mappings           map[key[I]]map[key[O]]struct{}
+	indices            []*mapIndex[O]
 	regIdx             uint64
 	registeredHandlers map[uint64]*registrationHandler[O]
 
@@ -84,13 +80,10 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 		parent:           parent,
 		transformer:      f,
 
-		outputs:  make(map[key[O]]O),
-		inputs:   make(map[key[I]]I),
-		mappings: make(map[key[I]]map[key[O]]struct{}),
-		mut:      &sync.RWMutex{},
-		idxMut:   &sync.RWMutex{},
-
-		regHandlerMut:      &sync.RWMutex{},
+		outputs:            make(map[key[O]]O),
+		inputs:             make(map[key[I]]I),
+		mappings:           make(map[key[I]]map[key[O]]struct{}),
+		mut:                &sync.RWMutex{},
 		registeredHandlers: make(map[uint64]*registrationHandler[O]),
 
 		taskQueue: fifo.NewQueue[task](BufferSize),
@@ -141,8 +134,8 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 	p := newRegistrationHandler(c, f)
 
 	// add registration handler
-	c.regHandlerMut.Lock()
-	defer c.regHandlerMut.Unlock()
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	p.unregister = c.unregisterFunc(c.regIdx)
 	c.registeredHandlers[c.regIdx] = p
 	c.regIdx++
@@ -175,8 +168,8 @@ func (c *derivedCollection[I, O]) RegisterBatched(f func(o []Event[O]), runExist
 
 // handlers provides a copy of all registered handlers.
 func (c *derivedCollection[I, O]) copyHandlerList() []*registrationHandler[O] {
-	c.regHandlerMut.RLock()
-	defer c.regHandlerMut.RUnlock()
+	c.mut.RLock()
+	defer c.mut.RUnlock()
 	return slices.Collect(maps.Values(c.registeredHandlers))
 }
 
@@ -191,8 +184,8 @@ func (c *derivedCollection[I, O]) Index(e KeyExtractor[O]) Index[O] {
 		return result
 	})
 
-	c.idxMut.Lock()
-	defer c.idxMut.Unlock()
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	c.indices = append(c.indices, idx)
 	return idx
 }
@@ -232,7 +225,11 @@ func (c *derivedCollection[I, O]) run() {
 }
 
 func (c *derivedCollection[I, O]) submitTask(task task) {
-	c.taskQueue.In() <- task
+	select {
+	case <-c.stop:
+		return
+	case c.taskQueue.In() <- task:
+	}
 }
 
 func (c *derivedCollection[I, O]) pushFetchEvents(d *dependency, events []Event[any]) {
@@ -351,17 +348,13 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 	c.distributeEvents(outputEvents, !c.HasSynced())
 }
 
-// distributeEvents sends the provided events to all downstream listeners.
+// distributeEvents sends the provided events to all downstream listeners. Must be called holding lock.
 func (c *derivedCollection[I, O]) distributeEvents(events []Event[O], initialSync bool) {
 	// update indexes before handlers, so handlers can rely on indexes being computed.
-	c.idxMut.RLock()
 	for _, idx := range c.indices {
 		idx.handleEvents(events)
 	}
-	c.idxMut.RUnlock()
 
-	c.regHandlerMut.RLock()
-	defer c.regHandlerMut.RUnlock()
 	for _, h := range c.registeredHandlers {
 		h.send(events, initialSync)
 	}
@@ -499,8 +492,8 @@ func (c *derivedCollection[I, O]) HasSynced() bool {
 // unregisterFunc must always be called with the c.regHandlerMut held.
 func (c *derivedCollection[I, O]) unregisterFunc(idx uint64) func() {
 	return func() {
-		c.regHandlerMut.Lock()
-		defer c.regHandlerMut.Unlock()
+		c.mut.Lock()
+		defer c.mut.Unlock()
 		delete(c.registeredHandlers, idx)
 	}
 }
