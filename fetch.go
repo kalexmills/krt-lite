@@ -19,9 +19,6 @@ type Context interface {
 	registerDependency(d *dependency, s Syncer, register func(func([]Event[any])) Syncer) bool
 	trackKeys(keys []string)
 	resetTrackingForCollection(collID uint64)
-	// getBuffer fetches or pre-allocates a buffer for Fetch results from the provided collection ID. If none exists it is
-	// created.
-	// getBuffer(collID uint64) any
 }
 
 // FetchOne fetches a single item from another collection by key, tracking it as a dependency.

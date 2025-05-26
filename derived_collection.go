@@ -56,8 +56,6 @@ type derivedCollection[I, O any] struct {
 	collectionShared
 
 	parent Collection[I]
-	// maps from collection ID to a reusable buffer for Fetch calls made by this collection's transformer.
-	fetchBuffers map[uint64]any
 
 	transformer FlatMapper[I, O]
 
