@@ -23,14 +23,20 @@ var BufferSize = 1024
 //
 // Panics will occur if an unsupported type for I or O is used, see [GetKey] for details.
 func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
+	// reuse a buffer to avoid allocations. Since ff is called serially during handleEvents, synchronization for buf is
+	// unneeded. Each call to Map gets its own re-usable buffer with minimal overhead.
+	buf := make([]O, 1)
+
 	ff := func(ctx Context, i I) []O {
 		res := handler(ctx, i)
 		if res == nil {
 			return nil
 		}
-		return []O{*res}
+
+		buf[0] = *res
+		return buf
 	}
-	return FlatMap(c, ff, opts...)
+	return newDerivedCollection(c, ff, opts)
 }
 
 // FlatMap creates a new Collection by calling the provided [FlatMapper] on each item in c. FlatMap allows mapping each
@@ -41,8 +47,7 @@ func Map[I, O any](c Collection[I], handler Mapper[I, O], opts ...CollectionOpti
 //
 // Panics will occur if an unsupported type of I or O are used, see [GetKey] for details.
 func FlatMap[I, O any](c Collection[I], f FlatMapper[I, O], opts ...CollectionOption) IndexableCollection[O] {
-	res := newDerivedCollection(c, f, opts)
-	return res
+	return newDerivedCollection(c, f, opts)
 }
 
 // derivedCollection implements a collection whose contents are computed based on the contents of other collections.
@@ -51,6 +56,8 @@ type derivedCollection[I, O any] struct {
 	collectionShared
 
 	parent Collection[I]
+	// maps from collection ID to a reusable buffer for Fetch calls made by this collection's transformer.
+	fetchBuffers map[uint64]any
 
 	transformer FlatMapper[I, O]
 
@@ -77,7 +84,8 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 	c := &derivedCollection[I, O]{
 		collectionShared: newCollectionShared(opts),
 		parent:           parent,
-		transformer:      f,
+
+		transformer: f,
 
 		outputs:            make(map[key[O]]O),
 		inputs:             make(map[key[I]]I),

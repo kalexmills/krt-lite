@@ -220,13 +220,10 @@ func (i *informer[T]) GetKey(k string) *T {
 }
 
 func (i *informer[T]) List() []T {
-	var res []T
-	err := cache.ListAllByNamespace(i.inf.GetIndexer(), metav1.NamespaceAll, labels.Everything(), func(obj any) {
-		cast := obj.(T)
-		res = append(res, cast)
-	})
-	if err != nil {
-		return nil
+	objs := i.inf.GetIndexer().List()
+	res := make([]T, len(objs))
+	for idx, obj := range objs {
+		res[idx] = obj.(T)
 	}
 	return res
 }
