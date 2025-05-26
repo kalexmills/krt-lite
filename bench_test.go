@@ -105,8 +105,10 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 	ctx := b.Context()
 
 	c := fake.NewFakeClient()
-	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c, krtlite.WithName("Pods"))
-	Services := krtlite.NewInformer[*corev1.Service, corev1.ServiceList](ctx, c, krtlite.WithName("Services"))
+	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](ctx, c,
+		krtlite.WithName("Pods"), krtlite.WithContext(ctx))
+	Services := krtlite.NewInformer[*corev1.Service, corev1.ServiceList](ctx, c,
+		krtlite.WithName("Services"), krtlite.WithContext(ctx))
 	ServicesByNamespace := krtlite.NewNamespaceIndex(Services)
 
 	Workloads := krtlite.Map(Pods, func(ktx krtlite.Context, p *corev1.Pod) *Workload {
@@ -130,7 +132,7 @@ func KrtLiteController(b *testing.B, events chan string) (Client, func()) {
 			}
 		}
 		return result
-	}, krtlite.WithName("Workloads"))
+	}, krtlite.WithName("Workloads"), krtlite.WithContext(ctx))
 
 	reg := Workloads.Register(func(e krtlite.Event[Workload]) {
 		events <- fmt.Sprintf("%s-%s", e.Latest().Name, e.Type)
