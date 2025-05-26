@@ -292,6 +292,7 @@ func (i *informer[T]) Index(e KeyExtractor[T]) Index[T] {
 	return &informerIndexer[T]{idxKey: idxKey, inf: i.inf.GetIndexer(), extractor: e, parentName: i.name}
 }
 
+// indexByNamespaceName returns index keys for the passed object in the form {namespace}/{name}.
 func indexByNamespaceName(in any) ([]string, error) {
 	obj, err := meta.Accessor(in)
 	if err != nil {
