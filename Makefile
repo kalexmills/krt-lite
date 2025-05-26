@@ -75,4 +75,4 @@ LOCALBIN=.bin
 bench-envtest:
 	mkdir -p .bin
 	KUBEBUILDER_ASSETS="$(shell pwd)/$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -i --bin-dir $(LOCALBIN) -p path)" \
-		go test -bench '^.*$$' -benchtime 20x -run ^$$ ./internal/bench
+		go test -bench '^.*$$' -benchtime 2x -run ^$$ ./internal/bench/envtest
