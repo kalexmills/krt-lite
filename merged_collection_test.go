@@ -10,6 +10,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"sync/atomic"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestMergeDisjoint(t *testing.T) {
@@ -49,7 +51,7 @@ func TestMergeDisjoint(t *testing.T) {
 }
 
 func TestMergeDisjointSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 	defer cancel()
 
 	c := fake.NewClientset(

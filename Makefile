@@ -66,3 +66,13 @@ list:
 .PHONY: run-gh-actions
 run-gh-actions: ## Runs GitHub actions using nektos/act.
 	@act -P linux/amd64=nektos/act-environments-ubuntu:latest --container-architecture linux/amd64 --matrix golang-version:1.23
+
+ENVTEST?=setup-envtest
+ENVTEST_K8S_VERSION?=1.33
+LOCALBIN=.bin
+
+.PHONY: bench-envtest
+bench-envtest:
+	mkdir -p .bin
+	KUBEBUILDER_ASSETS="$(shell pwd)/$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -i --bin-dir $(LOCALBIN) -p path)" \
+		go test -bench '^.*$$' -benchtime 20x -run ^$$ ./internal/bench

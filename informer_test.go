@@ -20,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 type rig interface {
@@ -31,7 +33,7 @@ type rig interface {
 
 func TestInformer(t *testing.T) {
 	doTest := func(t *testing.T, r rig) {
-		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 		defer cancel()
 
 		ConfigMaps := r.Collection(ctx, krtlite.WithContext(ctx))
@@ -203,7 +205,7 @@ func (d dynamicRig) Delete(ctx context.Context, cm *corev1.ConfigMap) error {
 
 func TestInformerFilters(t *testing.T) {
 	doTest := func(t *testing.T, r rig) {
-		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 		defer cancel()
 
 		cmA := &corev1.ConfigMap{
@@ -288,7 +290,7 @@ func TestInformerFilters(t *testing.T) {
 }
 
 func TestTypedClientInformerSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 	defer cancel()
 
 	c := typedfake.NewClientset(&corev1.ConfigMap{

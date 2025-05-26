@@ -13,10 +13,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestIndex(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 	defer cancel()
 
 	tests := []struct {

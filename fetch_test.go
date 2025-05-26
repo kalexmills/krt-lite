@@ -6,6 +6,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestFetchOptions(t *testing.T) {

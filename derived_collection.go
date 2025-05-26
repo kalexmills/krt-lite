@@ -318,7 +318,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 			c.mappings[iKey] = newKeys
 			c.inputs[iKey] = i
 
-			allKeys := make(map[key[O]]struct{})
+			allKeys := make(map[key[O]]struct{}, len(newKeys)+len(oldKeys))
 			maps.Copy(allKeys, newKeys)
 			maps.Copy(allKeys, oldKeys)
 

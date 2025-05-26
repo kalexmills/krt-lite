@@ -5,6 +5,8 @@ import (
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestStaticCollection(t *testing.T) {

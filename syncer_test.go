@@ -12,10 +12,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestRegistrationSync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout)
 	defer cancel()
 
 	t.Run("informer", func(t *testing.T) {

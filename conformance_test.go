@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 type Rig[T any] interface {

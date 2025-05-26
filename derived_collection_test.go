@@ -10,24 +10,12 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"slices"
 	"testing"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
-type SimpleService struct {
-	Named
-	Selector map[string]string
-}
-
-func SimpleServiceCollection(ctx context.Context, services krtlite.Collection[*corev1.Service]) krtlite.Collection[SimpleService] {
-	return krtlite.Map(services, func(ctx krtlite.Context, i *corev1.Service) *SimpleService {
-		return &SimpleService{
-			Named:    NewNamed(i),
-			Selector: i.Spec.Selector,
-		}
-	}, krtlite.WithName("SimpleService"), krtlite.WithContext(ctx))
-}
-
 func TestDerivedCollectionSimple(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout*5)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout*5)
 	defer cancel()
 
 	client := fake.NewClientset()
@@ -79,7 +67,7 @@ func TestDerivedCollectionSimple(t *testing.T) {
 }
 
 func TestDerivedCollectionInitialState(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout*5)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout*5)
 	defer cancel()
 
 	c := fake.NewClientset(
@@ -122,7 +110,7 @@ func TestDerivedCollectionInitialState(t *testing.T) {
 }
 
 func TestCollectionMerged(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout*5)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout*5)
 	defer cancel()
 
 	c := fake.NewClientset()
@@ -218,7 +206,7 @@ func TestCollectionDiamond(t *testing.T) {
 		MatchingSizes int
 	}
 
-	ctx, cancel := context.WithTimeout(t.Context(), timeout*5)
+	ctx, cancel := context.WithTimeout(t.Context(), Timeout*5)
 	defer cancel()
 
 	c := fake.NewClientset()

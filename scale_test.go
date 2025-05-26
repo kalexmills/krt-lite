@@ -11,6 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"testing"
 	"time"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 // TestDetectDroppedEvents ensures that events are not dropped at larger scales. Essentially the Benchmark with

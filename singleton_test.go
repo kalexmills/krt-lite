@@ -6,6 +6,8 @@ import (
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
+
+	. "github.com/kalexmills/krt-lite/internal/testutils"
 )
 
 func TestStaticSingleton(t *testing.T) {
