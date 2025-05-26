@@ -6,7 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"log/slog"
-	"sync/atomic"
 	"time"
 )
 
@@ -73,6 +72,14 @@ type ComparableObject interface {
 
 	runtime.Object
 	comparable
+}
+
+// Equaler is implemented by objects that can be compared to other objects for equality. It can be implemented for types
+// contained in a collection to avoid the use of reflection.
+type Equaler interface {
+	// Equal returns true if and only if obj is equal to this object. For any values of a and b, an correct implementation
+	// of Equal must satisfy a.Equal(b) == b.Equal(a).
+	Equal(obj any) bool
 }
 
 type Registration interface {
@@ -181,43 +188,6 @@ func WithFilterByNamespace(namespace string) CollectionOption {
 	}
 }
 
-// collectionShared contains metadata and fields common to controllers.
-type collectionShared struct {
-	uid                 uint64
-	name                string
-	stop                <-chan struct{}
-	pollInterval        *time.Duration
-	wantSpuriousUpdates bool
-	filter              *InformerFilter
-}
-
-func (c collectionShared) getStopCh() <-chan struct{} { //nolint: unused // implementing interface
-	return c.stop
-}
-
-func (c collectionShared) getName() string { //nolint:unused // implementing interface
-	return c.name
-}
-
-func (c collectionShared) getUID() uint64 { //nolint:unused // implementing interface
-	return c.uid
-}
-
-func (c collectionShared) logger() *slog.Logger {
-	return slog.With("uid", c.uid, "collectionName", c.name)
-}
-
-func newCollectionShared(options []CollectionOption) collectionShared {
-	meta := &collectionShared{
-		uid:  nextCollectionUID(),
-		stop: make(chan struct{}),
-	}
-	for _, option := range options {
-		option(meta)
-	}
-	return *meta
-}
-
 // A FetchOption modifies how calls to Fetch work.
 type FetchOption func(m *dependency)
 
@@ -281,20 +251,6 @@ func (e Event[T]) Items() []T {
 	return res
 }
 
-type key[O any] string
-
-var globalCollectionUIDCounter = atomic.Uint64{}
-
-func nextCollectionUID() uint64 {
-	return globalCollectionUIDCounter.Add(1)
-}
-
-var globalDependencyUIDCounter = atomic.Uint64{}
-
-func nextDependencyUID() uint64 {
-	return globalDependencyUIDCounter.Add(1)
-}
-
 // A Keyer is an object which can be identified by a unique key. It should be implemented by custom types which are
 // placed in Collections. All items in a collection must have a unique key.
 type Keyer interface {
@@ -316,8 +272,4 @@ func GetKey[O any](o O) string {
 		return typed.Key()
 	}
 	panic(fmt.Sprintf("Cannot get key, got %T", o))
-}
-
-func getTypedKey[O any](o O) key[O] {
-	return key[O](GetKey(o))
 }

@@ -6,7 +6,6 @@ import (
 	"iter"
 	"k8s.io/utils/ptr"
 	"maps"
-	"reflect"
 	"slices"
 	"sync"
 )
@@ -323,7 +322,7 @@ func (c *derivedCollection[I, O]) handleEvents(inputs []Event[I]) {
 
 				ev := Event[O]{}
 				if newOK && oldOK {
-					if !c.wantSpuriousUpdates && reflect.DeepEqual(newRes, oldRes) { // TODO: avoid reflection using Equaler
+					if !c.wantSpuriousUpdates && equal(newRes, oldRes) {
 						continue
 					}
 					ev.Type = EventUpdate
@@ -515,7 +514,7 @@ type registrationHandler[T any] struct {
 	unregister func()
 }
 
-// newRegistrationHandler returns a registration handler nad starts up the internal taskQueue.
+// newRegistrationHandler returns a registration handler and starts up the internal taskQueue.
 func newRegistrationHandler[O any](parent Collection[O], handler func(o []Event[O])) *registrationHandler[O] {
 	h := &registrationHandler[O]{
 		parent:          parent,
