@@ -1,7 +1,6 @@
 package krtlite
 
 import (
-	"github.com/kalexmills/krt-lite/bimap"
 	"github.com/kalexmills/krt-lite/fifo"
 	"iter"
 	"k8s.io/utils/ptr"
@@ -70,12 +69,15 @@ type derivedCollection[I, O any] struct {
 	syncedCh chan struct{}
 	syncer   *multiSyncer
 
-	collectionDependencies map[uint64]struct{}      // keyed list of collections w/ dependencies added via fetch
+	collectionDependencies map[uint64]struct{}      // set of collections w/ dependencies added via fetch
 	dependencies           map[key[I]][]*dependency // dependencies by input key
+	indexedDependencies    map[indexedDependency]map[key[I]]struct{}
+	taskQueue              *fifo.Queue[task]
+}
 
-	depMaps map[uint64]*bimap.BiMap[key[I], string] // depMaps stores dependency maps for each dependency.
-
-	taskQueue *fifo.Queue[task]
+type indexedDependency struct {
+	collID uint64
+	key    string
 }
 
 func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], opts []CollectionOption) *derivedCollection[I, O] {
@@ -95,7 +97,6 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 
 		collectionDependencies: make(map[uint64]struct{}),
 		dependencies:           make(map[key[I]][]*dependency),
-		depMaps:                make(map[uint64]*bimap.BiMap[key[I], string]),
 
 		syncedCh: make(chan struct{}),
 	}
@@ -408,18 +409,22 @@ func (c *derivedCollection[I, O]) handleFetchEvents(dependency *dependency, even
 
 func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[any]) map[key[I]]struct{} {
 	result := make(map[key[I]]struct{})
-	depMap := c.depMaps[dep.dependencyID]
 	for _, ev := range events {
-		// search through the depMap for a match to avoid searching the entire collection.
-		found := false
+		// a dependent object may have changed. Check all the input objects to see if they changed.
+
+		// check indexed dependencies; it may be faster
 		for _, item := range ev.Items() {
-			for iKey := range depMap.GetLeft(GetKey[any](item)) {
-				found = true
-				result[iKey] = struct{}{}
+			key := GetKey(item)
+			k := indexedDependency{collID: dep.collectionID, key: key}
+			for iKey := range c.indexedDependencies[k] {
+				if _, ok := result[iKey]; ok {
+					continue // we already found this key
+				}
+				deps := c.dependencies[iKey]
+				if objectChanged(deps, dep.collectionID, ev) {
+					result[iKey] = struct{}{}
+				}
 			}
-		}
-		if found {
-			continue
 		}
 
 		// if no match is found, check all dependencies across all keys for a match.
@@ -437,39 +442,61 @@ func (c *derivedCollection[I, O]) changedKeys(dep *dependency, events []Event[an
 	return result
 }
 
+func objectChanged(dependencies []*dependency, sourceCollection uint64, ev Event[any]) bool {
+	for _, dep := range dependencies {
+		if dep.collectionID != sourceCollection {
+			continue // skip any dependencies coming from other collections.
+		}
+		// check to see if any items in the event match the dependency
+		for _, item := range ev.Items() {
+			match := dep.Matches(item)
+			if match {
+				// It's a match! Return now. We don't need to check all dependencies, since we just need to find if any of them
+				// changed
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // dependencyUpdate updates dependency tracking. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyUpdate(iKey key[I], ktx *kontext[I, O]) {
 	c.dependencies[iKey] = ktx.dependencies
-	for _, dep := range ktx.dependencies {
-		if _, ok := c.depMaps[dep.dependencyID]; !ok {
-			c.depMaps[dep.dependencyID] = bimap.New[key[I], string]()
-		}
-		depMap := c.depMaps[dep.dependencyID]
 
-		// if this key exceeded its max track count, reset tracking information for this key so all dependencies are
-		// checked during updates.
-		if _, ok := ktx.resetTracking[dep.dependencyID]; ok {
-			depMap.RemoveLeft(iKey)
+	// add key to all indexed dependencies
+	for _, dep := range ktx.dependencies {
+		k, ok := dep.reverseIndexKey()
+		if !ok {
 			continue
 		}
-
-		for k := range ktx.trackedKeys {
-			depMap.Add(iKey, k)
+		if m, ok := c.indexedDependencies[k]; ok {
+			m[iKey] = struct{}{}
+		} else {
+			c.indexedDependencies[k] = map[key[I]]struct{}{iKey: {}}
 		}
 	}
 }
 
 // dependencyDelete deletes all dependency tracking for the provided iKey. Caller must hold mut.
 func (c *derivedCollection[I, O]) dependencyDelete(iKey key[I]) {
-	for _, dep := range c.dependencies[iKey] {
-		depID := dep.dependencyID
+	old, ok := c.dependencies[iKey]
+	if !ok {
+		return
+	}
 
-		c.depMaps[depID].RemoveLeft(iKey)
-		if c.depMaps[depID].IsEmpty() {
-			delete(c.depMaps, depID)
+	// remove key from all indexed dependencies
+	delete(c.dependencies, iKey)
+	for _, dep := range old {
+		if k, ok := dep.reverseIndexKey(); ok {
+			if keySet, ok := c.indexedDependencies[k]; ok {
+				delete(keySet, iKey)
+				if len(keySet) == 0 {
+					delete(c.indexedDependencies, k)
+				}
+			}
 		}
 	}
-	delete(c.dependencies, iKey)
 }
 
 func (c *derivedCollection[I, O]) snapshotInitialState() []Event[O] {
