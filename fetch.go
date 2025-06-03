@@ -51,7 +51,6 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 	}
 
 	d := &dependency{
-		dependencyID:   nextDependencyUID(),
 		collectionID:   c.getUID(),
 		collectionName: c.getName(),
 	}
@@ -101,7 +100,6 @@ func Fetch[T any](ktx Context, c Collection[T], opts ...FetchOption) []T {
 
 // dependency identifies a Fetch dependency between two collections.
 type dependency struct {
-	dependencyID   uint64
 	collectionID   uint64
 	collectionName string
 
@@ -114,6 +112,15 @@ type dependency struct {
 	filterSelectorLabels    map[string]string
 	filterLabelSelector     labels.Selector
 	filterNames             map[cache.ObjectName]struct{}
+}
+
+func (d *dependency) reverseIndexKey() (indexedDependency, bool) {
+	if len(d.filterKeys) == 1 {
+		for k := range d.filterKeys {
+			return indexedDependency{collID: d.collectionID, key: k}, true
+		}
+	}
+	return indexedDependency{}, false
 }
 
 func (d *dependency) Matches(object any) bool {

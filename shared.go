@@ -56,12 +56,6 @@ func nextCollectionUID() uint64 {
 	return globalCollectionUIDCounter.Add(1)
 }
 
-var globalDependencyUIDCounter = atomic.Uint64{}
-
-func nextDependencyUID() uint64 {
-	return globalDependencyUIDCounter.Add(1)
-}
-
 // equal compares two objects for equality. Uses Equaler if either a or b implement it, uses reflection otherwise.
 func equal(a, b any) bool {
 	if A, ok := a.(Equaler); ok {
