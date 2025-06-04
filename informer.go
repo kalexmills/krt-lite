@@ -30,14 +30,16 @@ const keyIdx = "namespace/name"
 //
 // Objects in this Collection will have keys in the format {namespace}/{name}, or {name} for cluster-scoped objects.
 //
+// Applies default filtering unless a custom filter is provided. See InformerFilter.Transform for details.
+//
 // Callers need only specify the first two type arguments. For example:
 //
 //	Pods := krtlite.NewInformer[*corev1.Pod, corev1.PodList](...)
 func NewInformer[T ComparableObject, TL any, PT Ptr[TL]](ctx context.Context, c client.WithWatch, opts ...CollectionOption) IndexableCollection[T] {
 	shared := newCollectionShared(opts)
 	var listOpts *metav1.ListOptions
-	if shared.filter != nil {
-		listOpts = shared.filter.ListOptions()
+	if shared.informerFilter != nil {
+		listOpts = shared.informerFilter.ListOptions()
 	}
 
 	return NewListerWatcherInformer[T](&cache.ListWatch{
@@ -80,11 +82,13 @@ type Ptr[T any] interface {
 // *corev1.Pods, TL must be corev1.PodList. *TL must implement client.ObjectList.
 //
 // All objects in this Collection will have keys in the format {namespace}/{name}, or {name} for cluster-scoped objects.
+//
+// Applies default filtering unless a custom filter is provided. See InformerFilter.Transform for details.
 func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.Context, c TypedClient[TL], opts ...CollectionOption) IndexableCollection[T] {
 	shared := newCollectionShared(opts)
 	var listOpts *metav1.ListOptions
-	if shared.filter != nil {
-		listOpts = shared.filter.ListOptions()
+	if shared.informerFilter != nil {
+		listOpts = shared.informerFilter.ListOptions()
 	}
 
 	return NewListerWatcherInformer[T](&cache.ListWatch{
@@ -110,7 +114,10 @@ func NewTypedClientInformer[T ComparableObject, TL runtime.Object](ctx context.C
 //
 // Key for objects in this Collection are in the format {namespace}/{name}, or {name} for cluster-scoped objects.
 //
-// Passing WithFilter to this function has no effect. Filtering must be performed by the passed [cache.ListerWatcher].
+// Passing server-side filters via WithFilter has no effect on informers created by this function. Any server-side
+// filtering must be configured by the caller on the passed [cache.ListerWatcher].
+//
+// Applies default filtering unless a custom filter is provided. See InformerFilter.Transform for details.
 func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts ...CollectionOption) IndexableCollection[T] {
 	i := informer[T]{
 		collectionShared: newCollectionShared(opts),
@@ -119,23 +126,38 @@ func NewListerWatcherInformer[T ComparableObject](lw cache.ListerWatcher, opts .
 		),
 		mut: &sync.Mutex{},
 	}
+	if err := i.init(); err != nil {
+		slog.Error("error initializing informer", "error", err)
+		return nil
+	}
 
 	i.run()
 
 	return &i
 }
 
-// NewDynamicInformer creates an informer which fetches using the provided dynamic client. Only objects matching the
-// provided gvr are watched.
+// stripUnusedFields strips frequently unused fields to save on memory. Sets ManagedFields to nil.
+func stripUnusedFields(obj any) (any, error) {
+	t, ok := obj.(metav1.ObjectMetaAccessor)
+	if !ok {
+		// shouldn't happen
+		return obj, nil
+	}
+	t.GetObjectMeta().SetManagedFields(nil)
+	return obj, nil
+}
+
+// NewDynamicInformer creates an informer which watches resources using the provided dynamic client. Only watches
+// resources which match the provided GroupVersionResource.
 func NewDynamicInformer(dynamicClient dynamic.Interface, gvr schema.GroupVersionResource, opts ...CollectionOption) Collection[*unstructured.Unstructured] {
 	shared := newCollectionShared(opts)
 
 	inf := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, gvr, metav1.NamespaceAll, 0,
 		cache.Indexers{}, func(options *metav1.ListOptions) {
-			if shared.filter == nil {
+			if shared.informerFilter == nil {
 				return
 			}
-			opts := shared.filter.ListOptions()
+			opts := shared.informerFilter.ListOptions()
 			options.LabelSelector = opts.LabelSelector
 			options.FieldSelector = opts.FieldSelector
 		})
@@ -145,10 +167,15 @@ func NewDynamicInformer(dynamicClient dynamic.Interface, gvr schema.GroupVersion
 		inf:              inf.Informer(),
 		mut:              &sync.Mutex{},
 	}
+	if err := res.init(); err != nil {
+		slog.Error("error initializing informer", "error", err)
+		return nil
+	}
 
 	if res.pollInterval == nil {
 		res.pollInterval = ptr.To(100 * time.Millisecond)
 	}
+
 	res.syncer = &pollingSyncer{
 		interval:  *res.pollInterval,
 		hasSynced: res.inf.HasSynced,
@@ -159,11 +186,17 @@ func NewDynamicInformer(dynamicClient dynamic.Interface, gvr schema.GroupVersion
 	return res
 }
 
-// InformerFilter provides server-side filters that apply to Informers.
+// InformerFilter provides filters that apply to Informers.
 type InformerFilter struct {
+	// LabelSelector is a server-side filter which ensures only objects matching the provided label selector are returned.
 	LabelSelector string
+	// FieldSelector is a server-side filter which ensures only objects matching the provided field selector are returned.
 	FieldSelector string
-	Namespace     string
+	// Namespace ensures this Informer only watch objects in the given Namespace. It applied server-side.
+	Namespace string
+	// Transform is a client-side func used to process objects before they are persisted in the cache. When unset, the
+	// default transform is used, which unsets metadata.managedFields to save on memory in-cache.
+	Transform cache.TransformFunc
 }
 
 func (f InformerFilter) ListOptions() *metav1.ListOptions {
@@ -190,7 +223,19 @@ type informer[T any] struct {
 	registrations []*informerRegistration[T]
 }
 
-// run starts this informer. It starts new goroutines which are shutdown when stop is closed. It does not block.
+func (i *informer[T]) init() error {
+	filter := i.informerFilter
+	if filter != nil && filter.Transform != nil {
+		if err := i.inf.SetTransform(i.informerFilter.Transform); err != nil {
+			return fmt.Errorf("error setting user-provided transform: %w", err)
+		}
+	} else if err := i.inf.SetTransform(stripUnusedFields); err != nil {
+		return fmt.Errorf("error setting default transform: %w", err)
+	}
+	return nil
+}
+
+// run starts this informer. It starts new goroutines which are shutdown once stop is closed. It does not block.
 func (i *informer[T]) run() {
 	if i.pollInterval == nil {
 		i.pollInterval = ptr.To(100 * time.Millisecond)

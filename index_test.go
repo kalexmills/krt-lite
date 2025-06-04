@@ -26,13 +26,14 @@ func TestIndex(t *testing.T) {
 		{
 			name: "Informer",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx))
+				return krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx),
+					krtlite.WithManagedFields())
 			},
 		},
 		{
 			name: "Map",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx))
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx), krtlite.WithManagedFields())
 				return krtlite.Map[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) **corev1.ConfigMap {
 					return &cm
 				}, krtlite.WithContext(ctx))
@@ -41,7 +42,7 @@ func TestIndex(t *testing.T) {
 		{
 			name: "FlatMap", // include both Map + FlatMap for completeness (even though Map calls FlatMap today)
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx))
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx), krtlite.WithManagedFields())
 				return krtlite.FlatMap[*corev1.ConfigMap, *corev1.ConfigMap](inf, func(ctx krtlite.Context, cm *corev1.ConfigMap) []*corev1.ConfigMap {
 					return []*corev1.ConfigMap{cm}
 				}, krtlite.WithContext(ctx))
@@ -50,7 +51,7 @@ func TestIndex(t *testing.T) {
 		{
 			name: "StaticCollection",
 			makeIndex: func(c clientcorev1.ConfigMapInterface) krtlite.IndexableCollection[*corev1.ConfigMap] {
-				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx))
+				inf := krtlite.NewTypedClientInformer[*corev1.ConfigMap](ctx, c, krtlite.WithContext(ctx), krtlite.WithManagedFields())
 				var col krtlite.StaticCollection[*corev1.ConfigMap]
 				reg := inf.Register(func(o krtlite.Event[*corev1.ConfigMap]) {
 					switch o.Type {

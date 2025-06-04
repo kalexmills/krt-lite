@@ -277,7 +277,7 @@ func MatchNames(names ...string) FetchOption {
 	}
 }
 
-// MatchFilter ensures [Fetch] only returns objects which match the provided filter.
+// MatchFilter ensures [Fetch] only returns objects which match the provided informerFilter.
 //
 // Panics will occur:
 //   - in case T does not match the type of the collection passed to Fetch.
