@@ -34,7 +34,7 @@ func TestInformer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 
-		ConfigMaps := r.Collection(ctx, krtlite.WithContext(ctx))
+		ConfigMaps := r.Collection(ctx, krtlite.WithContext(ctx), krtlite.WithManagedFields())
 
 		tt := NewTracker[*corev1.ConfigMap](t)
 		ConfigMaps.Register(tt.Track)

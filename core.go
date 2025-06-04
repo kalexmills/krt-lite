@@ -160,13 +160,31 @@ func WithSpuriousUpdates() CollectionOption {
 // WithFilter configures informers to perform server-side filtering. Has no effect for other collections.
 func WithFilter(filter InformerFilter) CollectionOption {
 	return func(m *collectionShared) {
-		m.filter = &filter
+		m.informerFilter = &filter
+	}
+}
+
+// WithManagedFields disables default transform on Informers, ensuring objects returned retain
+// metadata.managedFields. Has no effect for other collections. Will override any Transform value set by WithFilter.
+func WithManagedFields() CollectionOption {
+	return func(m *collectionShared) {
+		ident := func(obj any) (any, error) {
+			return obj, nil
+		}
+
+		if m.informerFilter != nil {
+			m.informerFilter.Transform = ident
+		} else {
+			m.informerFilter = &InformerFilter{
+				Transform: ident,
+			}
+		}
 	}
 }
 
 func WithFilterByLabel(labelSelector string) CollectionOption {
 	return func(m *collectionShared) {
-		m.filter = &InformerFilter{
+		m.informerFilter = &InformerFilter{
 			LabelSelector: labelSelector,
 		}
 	}
@@ -174,7 +192,7 @@ func WithFilterByLabel(labelSelector string) CollectionOption {
 
 func WithFilterByField(fieldSelector string) CollectionOption {
 	return func(m *collectionShared) {
-		m.filter = &InformerFilter{
+		m.informerFilter = &InformerFilter{
 			FieldSelector: fieldSelector,
 		}
 	}
@@ -182,7 +200,7 @@ func WithFilterByField(fieldSelector string) CollectionOption {
 
 func WithFilterByNamespace(namespace string) CollectionOption {
 	return func(m *collectionShared) {
-		m.filter = &InformerFilter{
+		m.informerFilter = &InformerFilter{
 			Namespace: namespace,
 		}
 	}

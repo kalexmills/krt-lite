@@ -18,7 +18,7 @@ type collectionShared struct {
 	stop                <-chan struct{}
 	pollInterval        *time.Duration
 	wantSpuriousUpdates bool
-	filter              *InformerFilter
+	informerFilter      *InformerFilter
 }
 
 func (c collectionShared) getStopCh() <-chan struct{} { //nolint: unused // implementing interface

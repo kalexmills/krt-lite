@@ -16,7 +16,7 @@ type StaticCollection[T any] interface {
 	// Delete deletes an object from the collection.
 	Delete(key string)
 
-	// DeleteFunc deletes all objects matching the filter.
+	// DeleteFunc deletes all objects matching the informerFilter.
 	DeleteFunc(filter func(T) bool)
 }
 
