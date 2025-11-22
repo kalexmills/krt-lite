@@ -87,11 +87,12 @@ func newDerivedCollection[I, O any](parent Collection[I], f FlatMapper[I, O], op
 
 		transformer: f,
 
-		outputs:            make(map[key[O]]O),
-		inputs:             make(map[key[I]]I),
-		mappings:           make(map[key[I]]map[key[O]]struct{}),
-		mut:                &sync.RWMutex{},
-		registeredHandlers: make(map[uint64]*registrationHandler[O]),
+		outputs:             make(map[key[O]]O),
+		inputs:              make(map[key[I]]I),
+		mappings:            make(map[key[I]]map[key[O]]struct{}),
+		mut:                 &sync.RWMutex{},
+		registeredHandlers:  make(map[uint64]*registrationHandler[O]),
+		indexedDependencies: make(map[indexedDependency]map[key[I]]struct{}),
 
 		taskQueue: fifo.NewQueue[task](BufferSize),
 
